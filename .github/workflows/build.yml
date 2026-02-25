@@ -11,14 +11,19 @@ on:
     paths:
       - 'hle/**'
 
-# Per-arch images: docker.io/<DOCKERHUB_USERNAME>/ha-addon-<arch>
-# HA supervisor substitutes {arch} from config.yaml `image` field.
+# One Docker Hub repo: docker.io/hleworld/ha-addon
+# Build jobs push per-arch interim tags (<arch>-<sha>).
+# The manifest job combines them into a single multi-arch tag that
+# Docker / HA supervisor resolve automatically at pull time.
 #
 # Runner strategy:
-#   aarch64, armv7 → arc-runner-ha-addon (native ARM, no emulation needed)
-#   amd64          → arc-runner-ha-addon via QEMU binfmt (k8s nodes register
-#                    handlers automatically via containerd).
-#                    If amd64 builds fail, change its runner to ubuntu-latest.
+#   aarch64, armv7 → arc-runner-ha-addon (native ARM)
+#   amd64          → arc-runner-ha-addon via QEMU binfmt (registered by
+#                    containerd on the k8s nodes). If builds fail with
+#                    "exec format error", change that entry to ubuntu-latest.
+
+env:
+  IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ha-addon
 
 jobs:
   build:
@@ -46,61 +51,61 @@ jobs:
           if ! command -v buildah &>/dev/null; then
             sudo apt-get update -qq && sudo apt-get install -y -qq buildah
           fi
-          buildah version
 
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          buildah login \
-            --username "$DOCKERHUB_USERNAME" \
-            --password "$DOCKERHUB_TOKEN" \
-            docker.io
+        run: buildah login --username "$DOCKERHUB_USERNAME" --password "$DOCKERHUB_TOKEN" docker.io
 
-      - name: Build image
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      - name: Build
         run: |
-          IMAGE="docker.io/${DOCKERHUB_USERNAME}/ha-addon-${{ matrix.arch }}"
-          VERSION="${{ github.event.release.tag_name || github.sha }}"
-
           buildah build \
             --platform "${{ matrix.platform }}" \
             --build-arg BUILD_FROM="${{ matrix.base }}" \
-            --tag "${IMAGE}:${VERSION}" \
+            --tag "${{ env.IMAGE }}:${{ matrix.arch }}-${{ github.sha }}" \
             ./hle
 
-          # Smoke-check: image should exist locally
-          buildah images "${IMAGE}:${VERSION}"
+      - name: Push interim arch tag
+        if: github.event_name != 'pull_request'
+        run: buildah push "${{ env.IMAGE }}:${{ matrix.arch }}-${{ github.sha }}"
 
-      - name: Push to Docker Hub
-        if: github.event_name == 'release'
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        run: |
-          IMAGE="docker.io/${DOCKERHUB_USERNAME}/ha-addon-${{ matrix.arch }}"
-          VERSION="${{ github.event.release.tag_name }}"
-
-          buildah push "${IMAGE}:${VERSION}"
-
-          # Retag and push :latest
-          buildah tag "${IMAGE}:${VERSION}" "${IMAGE}:latest"
-          buildah push "${IMAGE}:latest"
-
-  # After all arch images are pushed, update the Docker Hub description
-  # (optional — requires DOCKERHUB_TOKEN with write:description scope)
-  post:
-    name: Post-release
+  manifest:
+    name: Create multi-arch manifest
     runs-on: arc-runner-ha-addon
     needs: build
     if: github.event_name == 'release'
+
     steps:
+      - name: Install buildah (if not present)
+        run: |
+          if ! command -v buildah &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq buildah
+          fi
+
+      - name: Login to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: buildah login --username "$DOCKERHUB_USERNAME" --password "$DOCKERHUB_TOKEN" docker.io
+
+      - name: Create and push manifest
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+
+          for TAG in "$VERSION" latest; do
+            buildah manifest create "${{ env.IMAGE }}:${TAG}"
+            for ARCH in aarch64 amd64 armv7; do
+              buildah manifest add "${{ env.IMAGE }}:${TAG}" \
+                "${{ env.IMAGE }}:${ARCH}-${{ github.sha }}"
+            done
+            buildah manifest push --all "${{ env.IMAGE }}:${TAG}" \
+              "docker://${{ env.IMAGE }}:${TAG}"
+          done
+
       - name: Summary
         run: |
-          echo "### Released ${{ github.event.release.tag_name }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          for arch in aarch64 amd64 armv7; do
-            echo "- \`docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ha-addon-${arch}:${{ github.event.release.tag_name }}\`" >> "$GITHUB_STEP_SUMMARY"
-          done
+          VERSION="${{ github.event.release.tag_name }}"
+          echo "### Published \`hleworld/ha-addon:${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Multi-arch manifest covering: aarch64, amd64, armv7" >> "$GITHUB_STEP_SUMMARY"

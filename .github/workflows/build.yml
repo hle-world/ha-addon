@@ -24,10 +24,10 @@ jobs:
     name: Build frontend
     runs-on: arc-runner-ha-addon
     container:
-      image: node:22-alpine
+      image: node:22-slim
     steps:
       - name: Install git
-        run: apk add --no-cache git
+        run: apt-get update && apt-get install -y git
 
       - uses: actions/checkout@v4
 

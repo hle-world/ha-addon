@@ -4,18 +4,25 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.staticfiles import StaticFiles  # noqa: F401 — used in conditional mount below
 
 from backend import hle_api
 from backend.models import AddAccessRuleRequest, AddTunnelRequest, TunnelStatus, UpdateConfigRequest
 from backend import tunnel_manager as tm
 
-app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await tm.restore_all()
+    yield
+
+
+app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 OPTIONS_FILE = Path("/data/options.json")
 STATIC_DIR = Path("/app/backend/static")
@@ -31,30 +38,29 @@ async def list_tunnels():
 
 @app.post("/api/tunnels", response_model=TunnelStatus, status_code=201)
 async def add_tunnel(req: AddTunnelRequest):
-    cfg = tm.add_tunnel(req)
-    status = tm.get_tunnel(cfg.id)
-    return status
+    cfg = await tm.add_tunnel(req)
+    return tm.get_tunnel(cfg.id)
 
 
 @app.delete("/api/tunnels/{tunnel_id}", status_code=204)
 async def remove_tunnel(tunnel_id: str):
     if tm.get_tunnel(tunnel_id) is None:
         raise HTTPException(status_code=404, detail="Tunnel not found")
-    tm.remove_tunnel(tunnel_id)
+    await tm.remove_tunnel(tunnel_id)
 
 
 @app.post("/api/tunnels/{tunnel_id}/start", status_code=204)
 async def start_tunnel(tunnel_id: str):
     if tm.get_tunnel(tunnel_id) is None:
         raise HTTPException(status_code=404, detail="Tunnel not found")
-    tm.start_tunnel(tunnel_id)
+    await tm.start_tunnel(tunnel_id)
 
 
 @app.post("/api/tunnels/{tunnel_id}/stop", status_code=204)
 async def stop_tunnel(tunnel_id: str):
     if tm.get_tunnel(tunnel_id) is None:
         raise HTTPException(status_code=404, detail="Tunnel not found")
-    tm.stop_tunnel(tunnel_id)
+    await tm.stop_tunnel(tunnel_id)
 
 
 # ---------------------------------------------------------------------------

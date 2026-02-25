@@ -1,21 +1,24 @@
-"""Manages tunnel lifecycle: config persistence, supervisord conf files, and state."""
+"""Manages tunnel lifecycle: persistence and asyncio subprocess management."""
 
 from __future__ import annotations
 
+import asyncio
 import json
-import textwrap
+import os
 import uuid
 from pathlib import Path
 
-from backend import supervisor_client as sv
 from backend.models import AddTunnelRequest, TunnelConfig, TunnelStatus
 
-CONF_DIR = Path("/etc/supervisor/conf.d")
 LOG_DIR = Path("/data/logs")
 DATA_FILE = Path("/data/tunnels.json")
 
+# In-memory registry: tunnel_id -> running asyncio subprocess
+_processes: dict[str, asyncio.subprocess.Process] = {}
+
+
 # ---------------------------------------------------------------------------
-# Persistence helpers
+# Persistence
 # ---------------------------------------------------------------------------
 
 def _load_all() -> dict[str, TunnelConfig]:
@@ -32,96 +35,98 @@ def _save_all(tunnels: dict[str, TunnelConfig]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Supervisord conf generation
+# Process management
 # ---------------------------------------------------------------------------
 
-def _program_name(tunnel_id: str) -> str:
-    return f"tunnel-{tunnel_id}"
-
-
-def _write_conf(cfg: TunnelConfig) -> None:
-    name = _program_name(cfg.id)
-    flags = [
-        f"--service {cfg.service_url}",
-        f"--label {cfg.label}",
-        f"--auth {cfg.auth_mode}",
-        f"--relay-host {cfg.relay_host}",
+async def _spawn(cfg: TunnelConfig) -> asyncio.subprocess.Process:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOG_DIR / f"tunnel-{cfg.id}.log"
+    log_file = open(log_path, "ab")  # noqa: WPS515 — kept open for subprocess lifetime
+    # Arguments passed as list — no shell, no injection risk
+    cmd = [
+        "hle", "expose",
+        "--service", cfg.service_url,
+        "--label", cfg.label,
+        "--auth", cfg.auth_mode,
+        "--relay-host", cfg.relay_host,
     ]
-    conf = textwrap.dedent(f"""
-        [program:{name}]
-        command=hle expose {' '.join(flags)}
-        autostart=true
-        autorestart=true
-        autorestart=unexpected
-        startsecs=5
-        stopwaitsecs=10
-        stdout_logfile={LOG_DIR}/{name}.log
-        stdout_logfile_maxbytes=1MB
-        stdout_logfile_backups=3
-        redirect_stderr=true
-        environment=HLE_API_KEY="%(ENV_HLE_API_KEY)s"
-    """).strip() + "\n"
-    (CONF_DIR / f"{name}.conf").write_text(conf)
+    return await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=log_file,
+        stderr=asyncio.subprocess.STDOUT,
+        env={**os.environ},
+        start_new_session=True,
+    )
 
 
-def _remove_conf(tunnel_id: str) -> None:
-    (CONF_DIR / f"{_program_name(tunnel_id)}.conf").unlink(missing_ok=True)
+def _is_running(proc: asyncio.subprocess.Process | None) -> bool:
+    return proc is not None and proc.returncode is None
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Public async API
 # ---------------------------------------------------------------------------
 
-def restore_all() -> None:
-    """Called at container startup: regenerate conf files from saved state."""
+async def restore_all() -> None:
+    """Called at startup: re-spawn all persisted tunnels."""
     for cfg in _load_all().values():
-        _write_conf(cfg)
+        try:
+            proc = await _spawn(cfg)
+            _processes[cfg.id] = proc
+        except Exception as exc:
+            print(f"[hle] Failed to restore tunnel {cfg.id}: {exc}")
 
 
-def add_tunnel(req: AddTunnelRequest) -> TunnelConfig:
+async def add_tunnel(req: AddTunnelRequest) -> TunnelConfig:
     tunnels = _load_all()
     cfg = TunnelConfig(
         id=uuid.uuid4().hex[:8],
         service_url=req.service_url,
         label=req.label,
         auth_mode=req.auth_mode,
-        relay_host=_current_relay_host(),
+        relay_host=os.environ.get("HLE_RELAY_HOST", "hle.world"),
     )
-    _write_conf(cfg)
-    sv.reload_and_add(_program_name(cfg.id))
+    proc = await _spawn(cfg)
+    _processes[cfg.id] = proc
     tunnels[cfg.id] = cfg
     _save_all(tunnels)
     return cfg
 
 
-def remove_tunnel(tunnel_id: str) -> None:
-    sv.remove(_program_name(tunnel_id))
-    _remove_conf(tunnel_id)
+async def remove_tunnel(tunnel_id: str) -> None:
+    proc = _processes.pop(tunnel_id, None)
+    if _is_running(proc):
+        proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            proc.kill()
     tunnels = _load_all()
     tunnels.pop(tunnel_id, None)
     _save_all(tunnels)
 
 
-def start_tunnel(tunnel_id: str) -> None:
-    sv.start(_program_name(tunnel_id))
+async def start_tunnel(tunnel_id: str) -> None:
+    tunnels = _load_all()
+    cfg = tunnels.get(tunnel_id)
+    if cfg is None:
+        raise KeyError(tunnel_id)
+    if not _is_running(_processes.get(tunnel_id)):
+        _processes[tunnel_id] = await _spawn(cfg)
 
 
-def stop_tunnel(tunnel_id: str) -> None:
-    sv.stop(_program_name(tunnel_id))
+async def stop_tunnel(tunnel_id: str) -> None:
+    proc = _processes.get(tunnel_id)
+    if _is_running(proc):
+        proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            proc.kill()
 
 
 def list_tunnels() -> list[TunnelStatus]:
-    result = []
-    for tid, cfg in _load_all().items():
-        info = sv.get_state(_program_name(tid))
-        result.append(
-            TunnelStatus(
-                **cfg.model_dump(),
-                state=info.get("statename", "UNKNOWN"),
-                pid=info.get("pid") or None,
-            )
-        )
-    return result
+    return [_make_status(tid, cfg) for tid, cfg in _load_all().items()]
 
 
 def get_tunnel(tunnel_id: str) -> TunnelStatus | None:
@@ -129,18 +134,14 @@ def get_tunnel(tunnel_id: str) -> TunnelStatus | None:
     cfg = tunnels.get(tunnel_id)
     if cfg is None:
         return None
-    info = sv.get_state(_program_name(tunnel_id))
+    return _make_status(tunnel_id, cfg)
+
+
+def _make_status(tunnel_id: str, cfg: TunnelConfig) -> TunnelStatus:
+    proc = _processes.get(tunnel_id)
+    running = _is_running(proc)
     return TunnelStatus(
         **cfg.model_dump(),
-        state=info.get("statename", "UNKNOWN"),
-        pid=info.get("pid") or None,
+        state="RUNNING" if running else "STOPPED",
+        pid=proc.pid if running else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Config helpers
-# ---------------------------------------------------------------------------
-
-def _current_relay_host() -> str:
-    import os
-    return os.environ.get("HLE_RELAY_HOST", "hle.world")

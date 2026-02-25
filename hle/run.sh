@@ -1,6 +1,5 @@
 #!/usr/bin/with-contenv bashio
 
-# Read options from HA config and export for supervisord children
 API_KEY=$(bashio::config 'api_key')
 RELAY_HOST=$(bashio::config 'relay_host')
 
@@ -11,12 +10,7 @@ fi
 export HLE_API_KEY="${API_KEY}"
 export HLE_RELAY_HOST="${RELAY_HOST}"
 
-# Ensure data directories exist
-mkdir -p /data/logs /etc/supervisor/conf.d
+mkdir -p /data/logs
 
-# Restore tunnel supervisor configs from saved state
-bashio::log.info "Restoring tunnel configurations..."
-python3 /app/backend/restore_tunnels.py
-
-bashio::log.info "Starting supervisord..."
-exec supervisord -c /etc/supervisord.conf
+bashio::log.info "Starting HLE backend..."
+exec python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8099 --app-dir /app

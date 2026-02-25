@@ -155,6 +155,7 @@ jobs:
       - name: Create and push manifest
         run: |
           VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"  # strip leading 'v' so tag matches config.yaml version
           for TAG in "$VERSION" latest; do
             buildah --storage-driver vfs manifest create "${{ env.IMAGE }}:${TAG}"
             for ARCH in aarch64 amd64 armv7; do
@@ -168,5 +169,6 @@ jobs:
       - name: Summary
         run: |
           VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
           echo "### Published \`ghcr.io/hle-world/ha-addon:${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "Multi-arch manifest covering: aarch64, amd64, armv7" >> "$GITHUB_STEP_SUMMARY"

@@ -29,4 +29,4 @@ schema:
 map:
   - data
 
-image: "hleworld/ha-addon"
+image: "ghcr.io/hle-world/ha-addon"

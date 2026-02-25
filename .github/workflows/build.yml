@@ -11,24 +11,16 @@ on:
     paths:
       - 'hle/**'
 
-# One Docker Hub repo: docker.io/hleworld/ha-addon
-# Build jobs push per-arch interim tags (<arch>-<sha>).
-# The manifest job combines them into a single multi-arch tag that
-# Docker / HA supervisor resolve automatically at pull time.
-#
-# Runner strategy:
-#   aarch64, armv7 → arc-runner-ha-addon (native ARM)
-#   amd64          → arc-runner-ha-addon via QEMU binfmt (registered by
-#                    containerd on the k8s nodes). If builds fail with
-#                    "exec format error", change that entry to ubuntu-latest.
-
 env:
-  IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ha-addon
+  IMAGE: ghcr.io/hle-world/ha-addon
 
 jobs:
   build:
     name: Build ${{ matrix.arch }}
     runs-on: arc-runner-ha-addon
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -52,12 +44,13 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y -qq buildah
           fi
 
-      - name: Login to Docker Hub
+      - name: Login to ghcr.io
         if: github.event_name != 'pull_request'
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: buildah login --username "$DOCKERHUB_USERNAME" --password "$DOCKERHUB_TOKEN" docker.io
+        run: |
+          buildah login \
+            --username "${{ github.actor }}" \
+            --password "${{ secrets.GITHUB_TOKEN }}" \
+            ghcr.io
 
       - name: Build
         run: |
@@ -76,6 +69,9 @@ jobs:
     runs-on: arc-runner-ha-addon
     needs: build
     if: github.event_name == 'release'
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Install buildah (if not present)
@@ -84,11 +80,12 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y -qq buildah
           fi
 
-      - name: Login to Docker Hub
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: buildah login --username "$DOCKERHUB_USERNAME" --password "$DOCKERHUB_TOKEN" docker.io
+      - name: Login to ghcr.io
+        run: |
+          buildah login \
+            --username "${{ github.actor }}" \
+            --password "${{ secrets.GITHUB_TOKEN }}" \
+            ghcr.io
 
       - name: Create and push manifest
         run: |
@@ -107,5 +104,5 @@ jobs:
       - name: Summary
         run: |
           VERSION="${{ github.event.release.tag_name }}"
-          echo "### Published \`hleworld/ha-addon:${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Published \`ghcr.io/hle-world/ha-addon:${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "Multi-arch manifest covering: aarch64, amd64, armv7" >> "$GITHUB_STEP_SUMMARY"

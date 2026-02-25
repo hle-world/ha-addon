@@ -11,51 +11,96 @@ on:
     paths:
       - 'hle/**'
 
+# Per-arch images: docker.io/<DOCKERHUB_USERNAME>/ha-addon-<arch>
+# HA supervisor substitutes {arch} from config.yaml `image` field.
+#
+# Runner strategy:
+#   aarch64, armv7 → arc-runner-ha-addon (native ARM, no emulation needed)
+#   amd64          → arc-runner-ha-addon via QEMU binfmt (k8s nodes register
+#                    handlers automatically via containerd).
+#                    If amd64 builds fail, change its runner to ubuntu-latest.
+
 jobs:
   build:
     name: Build ${{ matrix.arch }}
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-ha-addon
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: aarch64
-            base: ghcr.io/home-assistant/aarch64-base-python:3.12
             platform: linux/arm64
+            base: ghcr.io/home-assistant/aarch64-base-python:3.12
           - arch: amd64
-            base: ghcr.io/home-assistant/amd64-base-python:3.12
             platform: linux/amd64
-          - arch: armhf
-            base: ghcr.io/home-assistant/armhf-base-python:3.12
-            platform: linux/arm/v6
+            base: ghcr.io/home-assistant/amd64-base-python:3.12
           - arch: armv7
-            base: ghcr.io/home-assistant/armv7-base-python:3.12
             platform: linux/arm/v7
-          - arch: i386
-            base: ghcr.io/home-assistant/i386-base-python:3.12
-            platform: linux/386
+            base: ghcr.io/home-assistant/armv7-base-python:3.12
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Login to GitHub Container Registry
+      - name: Install buildah (if not present)
+        run: |
+          if ! command -v buildah &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq buildah
+          fi
+          buildah version
+
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          buildah login \
+            --username "$DOCKERHUB_USERNAME" \
+            --password "$DOCKERHUB_TOKEN" \
+            docker.io
+
+      - name: Build image
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          IMAGE="docker.io/${DOCKERHUB_USERNAME}/ha-addon-${{ matrix.arch }}"
+          VERSION="${{ github.event.release.tag_name || github.sha }}"
+
+          buildah build \
+            --platform "${{ matrix.platform }}" \
+            --build-arg BUILD_FROM="${{ matrix.base }}" \
+            --tag "${IMAGE}:${VERSION}" \
+            ./hle
+
+          # Smoke-check: image should exist locally
+          buildah images "${IMAGE}:${VERSION}"
+
+      - name: Push to Docker Hub
         if: github.event_name == 'release'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          IMAGE="docker.io/${DOCKERHUB_USERNAME}/ha-addon-${{ matrix.arch }}"
+          VERSION="${{ github.event.release.tag_name }}"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+          buildah push "${IMAGE}:${VERSION}"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+          # Retag and push :latest
+          buildah tag "${IMAGE}:${VERSION}" "${IMAGE}:latest"
+          buildah push "${IMAGE}:latest"
 
-      - name: Build (and push on release)
-        uses: docker/build-push-action@v5
-        with:
-          context: hle
-          platforms: ${{ matrix.platform }}
-          build-args: BUILD_FROM=${{ matrix.base }}
-          push: ${{ github.event_name == 'release' }}
-          tags: ghcr.io/hle-world/ha-addon/${{ matrix.arch }}:${{ github.event.release.tag_name || 'dev' }}
+  # After all arch images are pushed, update the Docker Hub description
+  # (optional — requires DOCKERHUB_TOKEN with write:description scope)
+  post:
+    name: Post-release
+    runs-on: arc-runner-ha-addon
+    needs: build
+    if: github.event_name == 'release'
+    steps:
+      - name: Summary
+        run: |
+          echo "### Released ${{ github.event.release.tag_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          for arch in aarch64 amd64 armv7; do
+            echo "- \`docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ha-addon-${arch}:${{ github.event.release.tag_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          done

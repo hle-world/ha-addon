@@ -7,9 +7,7 @@ url: "https://github.com/hle-world/ha-addon"
 arch:
   - aarch64
   - amd64
-  - armhf
   - armv7
-  - i386
 
 startup: application
 boot: auto
@@ -31,4 +29,4 @@ schema:
 map:
   - data
 
-image: "ghcr.io/hle-world/ha-addon/{arch}"
+image: "hleworld/ha-addon-{arch}"

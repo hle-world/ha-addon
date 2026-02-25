@@ -19,7 +19,7 @@ env:
 
 jobs:
   # Build the React frontend once — pure JS, no architecture dependency.
-  # The dist/ artifact is reused by all three arch build jobs.
+  # The dist/ artifact is reused by all arch build jobs.
   frontend:
     name: Build frontend
     runs-on: arc-runner-ha-addon
@@ -41,9 +41,11 @@ jobs:
           path: hle/frontend/dist/
           retention-days: 1
 
-  build:
+  # ARM builds run on ARC (native ARM). ARC Kubernetes container mode requires
+  # a container: field, so we use buildah with --storage-driver vfs --isolation chroot.
+  build-arm:
     name: Build ${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: arc-runner-ha-addon
     container:
       image: debian:bookworm-slim
     needs: frontend
@@ -55,15 +57,9 @@ jobs:
       matrix:
         include:
           - arch: aarch64
-            runner: arc-runner-ha-addon
             platform: linux/arm64
             base: ghcr.io/home-assistant/aarch64-base-python:3.12-alpine3.18
-          - arch: amd64
-            runner: ubuntu-latest
-            platform: linux/amd64
-            base: ghcr.io/home-assistant/amd64-base-python:3.12-alpine3.18
           - arch: armv7
-            runner: arc-runner-ha-addon
             platform: linux/arm/v7
             base: ghcr.io/home-assistant/armv7-base-python:3.12-alpine3.18
 
@@ -101,12 +97,45 @@ jobs:
           buildah --storage-driver vfs push \
             "${{ env.IMAGE }}:${{ matrix.arch }}-${{ github.sha }}"
 
+  # amd64 runs on GitHub-hosted ubuntu-latest (native x86_64, no QEMU needed).
+  # No container: field — Docker is pre-installed on the runner VM.
+  build-amd64:
+    name: Build amd64
+    runs-on: ubuntu-latest
+    needs: frontend
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: hle/static/
+
+      - name: Login to ghcr.io
+        if: github.event_name != 'pull_request'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build
+        run: |
+          docker build \
+            --build-arg BUILD_FROM="ghcr.io/home-assistant/amd64-base-python:3.12-alpine3.18" \
+            --tag "${{ env.IMAGE }}:amd64-${{ github.sha }}" \
+            ./hle
+
+      - name: Push interim arch tag
+        if: github.event_name != 'pull_request'
+        run: docker push "${{ env.IMAGE }}:amd64-${{ github.sha }}"
+
   manifest:
     name: Create multi-arch manifest
     runs-on: arc-runner-ha-addon
     container:
       image: debian:bookworm-slim
-    needs: build
+    needs: [build-arm, build-amd64]
     if: github.event_name == 'release'
     permissions:
       contents: read

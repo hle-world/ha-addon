@@ -42,7 +42,7 @@ jobs:
 
     steps:
       - name: Install tools
-        run: apt-get update && apt-get install -y git buildah ca-certificates nodejs npm
+        run: apt-get update && apt-get install -y git buildah ca-certificates
 
       - uses: actions/checkout@v4
 

@@ -18,11 +18,35 @@ env:
   IMAGE: ghcr.io/hle-world/ha-addon
 
 jobs:
+  # Build the React frontend once — pure JS, no architecture dependency.
+  # The dist/ artifact is reused by all three arch build jobs.
+  frontend:
+    name: Build frontend
+    runs-on: arc-runner-ha-addon
+    container:
+      image: node:22-alpine
+    steps:
+      - name: Install git
+        run: apk add --no-cache git
+
+      - uses: actions/checkout@v4
+
+      - name: Build
+        working-directory: hle/frontend
+        run: npm ci && npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: hle/frontend/dist/
+          retention-days: 1
+
   build:
     name: Build ${{ matrix.arch }}
     runs-on: arc-runner-ha-addon
     container:
       image: debian:bookworm-slim
+    needs: frontend
     permissions:
       contents: read
       packages: write
@@ -45,6 +69,11 @@ jobs:
         run: apt-get update && apt-get install -y git buildah ca-certificates
 
       - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: hle/static/
 
       - name: Login to ghcr.io
         if: github.event_name != 'pull_request'
@@ -94,7 +123,6 @@ jobs:
       - name: Create and push manifest
         run: |
           VERSION="${{ github.event.release.tag_name }}"
-
           for TAG in "$VERSION" latest; do
             buildah --storage-driver vfs manifest create "${{ env.IMAGE }}:${TAG}"
             for ARCH in aarch64 amd64 armv7; do

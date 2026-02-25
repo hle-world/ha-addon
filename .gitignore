@@ -1,5 +1,6 @@
 node_modules/
 hle/frontend/dist/
+hle/static/
 __pycache__/
 *.pyc
 .venv/

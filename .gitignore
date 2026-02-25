@@ -1,0 +1,7 @@
+node_modules/
+hle/frontend/dist/
+__pycache__/
+*.pyc
+.venv/
+.env
+*.egg-info/

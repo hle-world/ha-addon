@@ -15,7 +15,6 @@ RUN apk add --no-cache supervisor jq \
         hle-client \
         fastapi \
         uvicorn \
-        supervisor \
         httpx
 
 COPY backend/ /app/backend/

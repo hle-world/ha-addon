@@ -7,9 +7,12 @@ on:
     branches: [main]
     paths:
       - 'hle/**'
+      - '.github/workflows/build.yml'
   pull_request:
     paths:
       - 'hle/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
 
 env:
   IMAGE: ghcr.io/hle-world/ha-addon

@@ -32,13 +32,13 @@ jobs:
         include:
           - arch: aarch64
             platform: linux/arm64
-            base: ghcr.io/home-assistant/aarch64-base-python:3.12
+            base: ghcr.io/home-assistant/aarch64-base-python:3.12-alpine3.18
           - arch: amd64
             platform: linux/amd64
-            base: ghcr.io/home-assistant/amd64-base-python:3.12
+            base: ghcr.io/home-assistant/amd64-base-python:3.12-alpine3.18
           - arch: armv7
             platform: linux/arm/v7
-            base: ghcr.io/home-assistant/armv7-base-python:3.12
+            base: ghcr.io/home-assistant/armv7-base-python:3.12-alpine3.18
 
     steps:
       - name: Install tools

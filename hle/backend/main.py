@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -31,7 +32,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 HLE_CONFIG = Path("/data/hle_config.json")  # our own file, not managed by HA Supervisor
+HA_CONFIG  = Path("/config/configuration.yaml")
 STATIC_DIR = Path("/app/backend/static")
+SUPERVISOR_API = "http://supervisor"
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +184,81 @@ async def delete_share_link(subdomain: str, link_id: int):
 # ---------------------------------------------------------------------------
 # Add-on config
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# HA configuration.yaml auto-setup
+# ---------------------------------------------------------------------------
+
+def _detect_subnet() -> str:
+    """Return the /23 subnet this addon uses to reach HA (e.g. '172.30.32.0/23')."""
+    try:
+        with socket.create_connection(("homeassistant.local.hass.io", 8123), timeout=2) as s:
+            addon_ip = s.getsockname()[0]
+        return str(ipaddress.ip_network(f"{addon_ip}/23", strict=False))
+    except Exception:
+        return "172.30.32.0/23"
+
+
+@app.get("/api/ha-setup/status")
+async def ha_setup_status():
+    """Check whether configuration.yaml already has the proxy settings."""
+    if not HA_CONFIG.exists():
+        return {"status": "no_file"}
+    text = HA_CONFIG.read_text(errors="replace")
+    if "use_x_forwarded_for" in text:
+        return {"status": "configured"}
+    if re.search(r"^http:", text, re.MULTILINE):
+        return {"status": "has_http_section"}
+    return {"status": "not_configured", "subnet": _detect_subnet()}
+
+
+@app.post("/api/ha-setup/apply")
+async def ha_setup_apply():
+    """Append the http proxy block to configuration.yaml."""
+    if not HA_CONFIG.exists():
+        raise HTTPException(status_code=404, detail="configuration.yaml not found at /config/")
+    text = HA_CONFIG.read_text(errors="replace")
+    if "use_x_forwarded_for" in text:
+        return {"status": "already_configured"}
+    if re.search(r"^http:", text, re.MULTILINE):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "An 'http:' section already exists in configuration.yaml "
+                "but does not contain 'use_x_forwarded_for'. "
+                "Please add it manually."
+            ),
+        )
+    subnet = _detect_subnet()
+    block = (
+        "\n# Added by HLE addon — required for tunnel reverse-proxy support\n"
+        "http:\n"
+        "  use_x_forwarded_for: true\n"
+        "  trusted_proxies:\n"
+        f"    - {subnet}\n"
+    )
+    HA_CONFIG.write_text(text + block)
+    return {"status": "applied", "subnet": subnet}
+
+
+@app.post("/api/ha-setup/restart")
+async def ha_setup_restart():
+    """Restart HA Core via the Supervisor API."""
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        raise HTTPException(status_code=503, detail="SUPERVISOR_TOKEN not available")
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                f"{SUPERVISOR_API}/core/restart",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        if resp.status_code not in (200, 204):
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail=f"Supervisor unreachable: {exc}")
+    return {"status": "restarting"}
+
 
 @app.get("/api/network-info")
 async def get_network_info():

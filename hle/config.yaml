@@ -18,13 +18,9 @@ ingress_port: 8099
 panel_icon: mdi:tunnel
 panel_title: HLE
 
-options:
-  api_key: ""
-
-schema:
-  api_key: password
-
 map:
   - data
+  - config:rw
+  - config:rw
 
 image: "ghcr.io/hle-world/ha-addon"

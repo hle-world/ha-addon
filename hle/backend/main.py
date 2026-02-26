@@ -23,6 +23,7 @@ from backend import tunnel_manager as tm
 async def lifespan(app: FastAPI):
     await tm.restore_all()
     yield
+    await tm.shutdown_all()
 
 
 app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=lifespan)

@@ -25,11 +25,12 @@ const btn = (primary: boolean): React.CSSProperties => ({
   background: primary ? '#3b82f6' : '#2d3139', color: '#fff', fontSize: 14, fontWeight: 500,
 })
 
-const HA_PRESET = { service_url: 'http://homeassistant.local.hass.io:8123', label: 'ha', auth_mode: 'sso' as const }
+const HA_PRESET = { service_url: 'http://homeassistant.local.hass.io:8123', label: 'ha', name: 'Home Assistant', auth_mode: 'sso' as const }
 
 export function AddTunnelModal({ onClose, onAdded }: Props) {
   const [serviceUrl, setServiceUrl] = useState('')
   const [label, setLabel] = useState('')
+  const [name, setName] = useState('')
   const [authMode, setAuthMode] = useState<'sso' | 'none'>('sso')
   const [verifySsl, setVerifySsl] = useState(false)
   const [error, setError] = useState('')
@@ -39,7 +40,7 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
     setLoading(true)
     setError('')
     try {
-      await addTunnel({ service_url: serviceUrl, label, auth_mode: authMode, verify_ssl: verifySsl })
+      await addTunnel({ service_url: serviceUrl, label, name: name || undefined, auth_mode: authMode, verify_ssl: verifySsl })
       onAdded()
     } catch (e) {
       setError(String(e))
@@ -54,7 +55,7 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
         <h2 style={{ fontSize: 17, fontWeight: 700 }}>Add Tunnel</h2>
 
         <button style={{ ...btn(false), textAlign: 'left', padding: '10px 14px', border: '1px dashed #3b82f6' }}
-          onClick={() => { setServiceUrl(HA_PRESET.service_url); setLabel(HA_PRESET.label); setAuthMode(HA_PRESET.auth_mode) }}
+          onClick={() => { setServiceUrl(HA_PRESET.service_url); setLabel(HA_PRESET.label); setName(HA_PRESET.name); setAuthMode(HA_PRESET.auth_mode) }}
           disabled={loading}>
           ⚡ Quick-fill: Expose Home Assistant
         </button>
@@ -68,7 +69,13 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
         </div>
 
         <div style={fieldStyle}>
-          <label style={labelStyle}>Label</label>
+          <label style={labelStyle}>Name <span style={{ color: '#6b7280', fontWeight: 400 }}>(display only, optional)</span></label>
+          <input style={inputStyle} value={name} onChange={e => setName(e.target.value)}
+            placeholder="e.g. Proxmox, Jellyfin, Home Assistant" />
+        </div>
+
+        <div style={fieldStyle}>
+          <label style={labelStyle}>Label <span style={{ color: '#6b7280', fontWeight: 400 }}>(used in subdomain)</span></label>
           <input style={inputStyle} value={label} onChange={e => setLabel(e.target.value)}
             placeholder="jellyfin" />
           <span style={{ fontSize: 12, color: '#6b7280' }}>

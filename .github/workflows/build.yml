@@ -123,9 +123,10 @@ jobs:
 
   manifest:
     name: Create multi-arch manifest
-    runs-on: arc-runner-ha-addon
-    container:
-      image: debian:bookworm-slim
+    # Run on ubuntu-latest (no container) — ARC k8s container mode has a bug
+    # with its step runner that causes buildah login to fail intermittently.
+    # Docker buildx imagetools is pre-installed on ubuntu-latest and works fine.
+    runs-on: ubuntu-latest
     needs: [build-arm, build-amd64]
     if: github.event_name == 'release'
     permissions:
@@ -133,33 +134,25 @@ jobs:
       packages: write
 
     steps:
-      - name: Install tools
-        run: apt-get update && apt-get install -y buildah ca-certificates
-
       - name: Login to ghcr.io
-        run: |
-          buildah --storage-driver vfs login \
-            --username "${{ github.actor }}" \
-            --password "${{ secrets.GITHUB_TOKEN }}" \
-            ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Create and push manifest
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
           VERSION="${VERSION#v}"  # strip leading 'v' so tag matches config.yaml version
-          for TAG in "$VERSION" latest; do
-            buildah --storage-driver vfs manifest create "${{ env.IMAGE }}:${TAG}"
-            for ARCH in aarch64 amd64 armv7; do
-              buildah --storage-driver vfs manifest add "${{ env.IMAGE }}:${TAG}" \
-                "${{ env.IMAGE }}:${ARCH}-${{ github.sha }}"
-            done
-            buildah --storage-driver vfs manifest push --all "${{ env.IMAGE }}:${TAG}" \
-              "docker://${{ env.IMAGE }}:${TAG}"
-          done
+          docker buildx imagetools create \
+            --tag "${{ env.IMAGE }}:${VERSION}" \
+            --tag "${{ env.IMAGE }}:latest" \
+            "${{ env.IMAGE }}:aarch64-${{ github.sha }}" \
+            "${{ env.IMAGE }}:amd64-${{ github.sha }}" \
+            "${{ env.IMAGE }}:armv7-${{ github.sha }}"
 
       - name: Summary
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
           VERSION="${VERSION#v}"
           echo "### Published \`ghcr.io/hle-world/ha-addon:${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "Multi-arch manifest covering: aarch64, amd64, armv7" >> "$GITHUB_STEP_SUMMARY"

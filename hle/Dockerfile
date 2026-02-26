@@ -2,7 +2,7 @@ ARG BUILD_FROM
 FROM $BUILD_FROM
 
 RUN pip3 install --no-cache-dir \
-        hle-client==1.5.0 \
+        hle-client==1.6.0 \
         fastapi \
         uvicorn \
     && find /usr/lib/python3* /usr/local/lib/python3* -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null; \

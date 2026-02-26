@@ -1,5 +1,5 @@
 name: "Home Lab Everywhere"
-version: "0.1.0"
+version: "0.1.1"
 slug: hle
 description: "Expose homelab services via HLE tunnels with built-in SSO"
 url: "https://github.com/hle-world/ha-addon"

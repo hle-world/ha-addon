@@ -141,7 +141,12 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
           </span>
           <span style={{ color: '#9ca3af', fontSize: 12 }}>{tunnel.service_url}</span>
           {tunnel.state === 'CONNECTING' && (
-            <span style={{ color: '#facc15', fontSize: 12 }}>Establishing connection to relay…</span>
+            <span style={{ color: '#facc15', fontSize: 12 }}>Process running — connecting to relay…</span>
+          )}
+          {tunnel.state === 'FAILED' && (
+            <span style={{ color: '#f87171', fontSize: 12 }}>
+              Process exited unexpectedly.{tunnel.error ? ` Last log: ${tunnel.error}` : ' Check Logs for details.'}
+            </span>
           )}
           {tunnel.subdomain && (
             <span style={{ color: '#6b7280', fontSize: 12, fontFamily: 'monospace' }}>
@@ -160,9 +165,11 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
 
       {/* Action buttons */}
       <div style={row}>
-        {tunnel.state !== 'STOPPED'
+        {tunnel.state === 'CONNECTED' || tunnel.state === 'CONNECTING'
           ? <button style={btn('ghost')} onClick={() => stopTunnel(tunnel.id).then(onRefresh)}>Stop</button>
-          : <button style={btn('primary')} onClick={() => startTunnel(tunnel.id).then(onRefresh)}>Start</button>
+          : <button style={btn('primary')} onClick={() => startTunnel(tunnel.id).then(onRefresh)}>
+              {tunnel.state === 'FAILED' ? 'Retry' : 'Start'}
+            </button>
         }
         {sub && isSso && (
           <button style={btn(panel === 'access' ? 'active' : 'ghost')} onClick={() => togglePanel('access')}>

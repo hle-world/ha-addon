@@ -2,7 +2,7 @@ name: Build & Publish Add-on
 
 on:
   release:
-    types: [published, prereleased]
+    types: [prereleased]
   workflow_dispatch:
 
 env:

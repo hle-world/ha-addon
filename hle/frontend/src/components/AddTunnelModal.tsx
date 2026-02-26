@@ -31,6 +31,7 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
   const [serviceUrl, setServiceUrl] = useState('')
   const [label, setLabel] = useState('')
   const [authMode, setAuthMode] = useState<'sso' | 'none'>('sso')
+  const [verifySsl, setVerifySsl] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -38,7 +39,7 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
     setLoading(true)
     setError('')
     try {
-      await addTunnel(overrides ?? { service_url: serviceUrl, label, auth_mode: authMode })
+      await addTunnel(overrides ?? { service_url: serviceUrl, label, auth_mode: authMode, verify_ssl: verifySsl })
       onAdded()
     } catch (e) {
       setError(String(e))
@@ -90,6 +91,12 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
             </span>
           )}
         </div>
+
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', fontSize: 14 }}>
+          <input type="checkbox" checked={verifySsl} onChange={e => setVerifySsl(e.target.checked)} />
+          <span>Verify SSL certificate</span>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>(enable for services with valid certs; leave off for self-signed)</span>
+        </label>
 
         {error && <p style={{ color: '#f87171', fontSize: 13 }}>{error}</p>}
 

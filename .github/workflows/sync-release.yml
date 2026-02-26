@@ -1,20 +1,29 @@
 name: Sync release with hle-client
 
+# Triggered automatically by hle-client's publish workflow via repository_dispatch,
+# or manually via workflow_dispatch for testing.
+#
+# Creates a PR on main that bumps the version pin and links to the hle-client
+# release notes. Review the PR, add any UI/backend work needed for new features,
+# then merge. After merging, create a release manually (Actions → Build → Run workflow,
+# or gh release create vX.Y.Z) to trigger the Docker build.
+
 on:
   repository_dispatch:
     types: [hle-client-release]
   workflow_dispatch:
     inputs:
       version:
-        description: 'hle-client version to sync (e.g. v1.2.3 or 1.2.3)'
+        description: 'hle-client version (e.g. v1.2.3 or 1.2.3)'
         required: true
 
 jobs:
-  sync:
-    name: Sync version and release
+  open-pr:
+    name: Open version bump PR
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -26,27 +35,48 @@ jobs:
           VERSION="${VERSION#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Update config.yaml
-        run: |
-          sed -i "s/^version: .*/version: \"${{ steps.ver.outputs.version }}\"/" hle/config.yaml
-
-      - name: Update Dockerfile hle-client pin
-        run: |
-          sed -i "s/hle-client==[0-9][0-9.]*/hle-client==${{ steps.ver.outputs.version }}/" hle/Dockerfile
-
-      - name: Commit and push
+      - name: Create branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "sync/hle-client-v${{ steps.ver.outputs.version }}"
+
+      - name: Bump versions
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          sed -i "s/^version: .*/version: \"${VERSION}\"/" hle/config.yaml
+          sed -i "s/hle-client==[0-9][0-9.]*/hle-client==${VERSION}/" hle/Dockerfile
+
+      - name: Commit
+        run: |
           git add hle/config.yaml hle/Dockerfile
           git commit -m "Sync to hle-client v${{ steps.ver.outputs.version }}"
-          git push
+          git push origin "sync/hle-client-v${{ steps.ver.outputs.version }}"
 
-      - name: Create release
+      - name: Open PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
-          gh release create "v${VERSION}" \
-            --title "v${VERSION}" \
-            --notes "Synced with [hle-client v${VERSION}](https://github.com/hle-world/hle-client/releases/tag/v${VERSION})."
+          gh pr create \
+            --base main \
+            --head "sync/hle-client-v${VERSION}" \
+            --title "Sync to hle-client v${VERSION}" \
+            --body "$(cat <<BODY
+          ## hle-client v${VERSION} released
+
+          **Review checklist before merging:**
+          - [ ] Read the [hle-client v${VERSION} release notes](https://github.com/hle-world/hle-client/releases/tag/v${VERSION})
+          - [ ] Check for new API methods in \`ApiClient\` → add backend endpoints + frontend UI if needed
+          - [ ] Check for new CLI flags on \`hle expose\` → update \`tunnel_manager.py\` if needed
+          - [ ] Test the add-on with the new client version
+
+          **After merging:** create a release manually to trigger the Docker build:
+          \`\`\`
+          gh release create v${VERSION} --title "v${VERSION}" --notes "..."
+          \`\`\`
+
+          ---
+          *Automated bump: \`hle/config.yaml\` → \`${VERSION}\`, \`hle/Dockerfile\` → \`hle-client==${VERSION}\`*
+          BODY
+          )"

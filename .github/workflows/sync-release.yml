@@ -1,0 +1,52 @@
+name: Sync release with hle-client
+
+on:
+  repository_dispatch:
+    types: [hle-client-release]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'hle-client version to sync (e.g. v1.2.3 or 1.2.3)'
+        required: true
+
+jobs:
+  sync:
+    name: Sync version and release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          VERSION="${{ github.event.client_payload.version || github.event.inputs.version }}"
+          VERSION="${VERSION#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Update config.yaml
+        run: |
+          sed -i "s/^version: .*/version: \"${{ steps.ver.outputs.version }}\"/" hle/config.yaml
+
+      - name: Update Dockerfile hle-client pin
+        run: |
+          sed -i "s/hle-client==[0-9][0-9.]*/hle-client==${{ steps.ver.outputs.version }}/" hle/Dockerfile
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add hle/config.yaml hle/Dockerfile
+          git commit -m "Sync to hle-client v${{ steps.ver.outputs.version }}"
+          git push
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes "Synced with [hle-client v${VERSION}](https://github.com/hle-world/hle-client/releases/tag/v${VERSION})."

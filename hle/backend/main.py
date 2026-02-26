@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -179,6 +181,23 @@ async def delete_share_link(subdomain: str, link_id: int):
 # ---------------------------------------------------------------------------
 # Add-on config
 # ---------------------------------------------------------------------------
+
+@app.get("/api/network-info")
+async def get_network_info():
+    """Return the addon container's IP and the trusted_proxies subnet for HA config."""
+    addon_ip: str | None = None
+    subnet: str | None = None
+    try:
+        # Connect toward HA so the OS picks the right source interface.
+        with socket.create_connection(("homeassistant.local.hass.io", 8123), timeout=2) as s:
+            addon_ip = s.getsockname()[0]
+        # HA Supervisor always allocates addon IPs inside a /23 block.
+        net = ipaddress.ip_network(f"{addon_ip}/23", strict=False)
+        subnet = str(net)
+    except Exception:
+        pass
+    return {"addon_ip": addon_ip, "trusted_subnet": subnet}
+
 
 @app.get("/api/config")
 async def get_config():

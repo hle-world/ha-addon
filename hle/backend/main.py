@@ -202,6 +202,8 @@ async def update_config(req: UpdateConfigRequest):
     current["api_key"] = req.api_key
     HLE_CONFIG.write_text(json.dumps(current, indent=2))
     os.environ["HLE_API_KEY"] = req.api_key
+    # Start any configured tunnels that were waiting for a key
+    await tm.restore_all()
 
 
 # ---------------------------------------------------------------------------

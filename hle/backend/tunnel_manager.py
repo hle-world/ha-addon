@@ -9,7 +9,7 @@ import signal
 import uuid
 from pathlib import Path
 
-from backend.models import AddTunnelRequest, TunnelConfig, TunnelStatus
+from backend.models import AddTunnelRequest, TunnelConfig, TunnelStatus, UpdateTunnelRequest
 
 LOG_DIR = Path("/data/logs")
 DATA_FILE = Path("/data/tunnels.json")
@@ -51,11 +51,16 @@ async def _spawn(cfg: TunnelConfig) -> asyncio.subprocess.Process:
     cmd = ["hle", "expose", "--service", cfg.service_url, "--label", cfg.label, "--auth", cfg.auth_mode]
     if cfg.verify_ssl:
         cmd.append("--verify-ssl")
+    if not cfg.websocket_enabled:
+        cmd.append("--no-websocket")
+    env = {**os.environ}
+    if cfg.api_key:
+        env["HLE_API_KEY"] = cfg.api_key  # per-tunnel override; not visible in `ps`
     return await asyncio.create_subprocess_exec(
         *cmd,
         stdout=log_file,
         stderr=asyncio.subprocess.STDOUT,
-        env={**os.environ},
+        env=env,
         start_new_session=True,
     )
 
@@ -137,12 +142,61 @@ async def add_tunnel(req: AddTunnelRequest) -> TunnelConfig:
         name=req.name,
         auth_mode=req.auth_mode,
         verify_ssl=req.verify_ssl,
+        websocket_enabled=req.websocket_enabled,
+        api_key=req.api_key or None,
     )
     proc = await _spawn(cfg)
     _processes[cfg.id] = proc
     tunnels[cfg.id] = cfg
     _save_all(tunnels)
     asyncio.create_task(_detect_subdomain(cfg.id, cfg.service_url, cfg.label))
+    return cfg
+
+
+async def update_tunnel(tunnel_id: str, req: UpdateTunnelRequest) -> TunnelConfig:
+    """Apply a partial update to a tunnel config, then restart it."""
+    tunnels = _load_all()
+    cfg = tunnels.get(tunnel_id)
+    if cfg is None:
+        raise KeyError(tunnel_id)
+
+    # Apply only the fields that were explicitly provided
+    changed = req.model_dump(exclude_none=True)
+    # Empty string for api_key means "clear the override"
+    if "api_key" in req.model_fields_set:
+        changed["api_key"] = req.api_key or None
+
+    # Track if label/service changed so we clear the stale subdomain
+    label_or_url_changed = (
+        ("label" in changed and changed["label"] != cfg.label)
+        or ("service_url" in changed and changed["service_url"] != cfg.service_url)
+    )
+
+    for field, value in changed.items():
+        setattr(cfg, field, value)
+
+    if label_or_url_changed:
+        cfg.subdomain = None
+
+    tunnels[tunnel_id] = cfg
+    _save_all(tunnels)
+
+    # Stop existing process if running
+    proc = _processes.get(tunnel_id)
+    if _is_running(proc):
+        proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+
+    # Restart with updated config
+    _connected.discard(tunnel_id)
+    _user_stopped.discard(tunnel_id)
+    new_proc = await _spawn(cfg)
+    _processes[tunnel_id] = new_proc
+    asyncio.create_task(_detect_subdomain(cfg.id, cfg.service_url, cfg.label))
+
     return cfg
 
 

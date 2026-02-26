@@ -5,11 +5,23 @@ export interface TunnelStatus {
   name: string | null
   auth_mode: 'sso' | 'none'
   verify_ssl: boolean
+  websocket_enabled: boolean
+  api_key: string | null
   subdomain: string | null
   state: 'CONNECTED' | 'CONNECTING' | 'STOPPED' | 'FAILED'
   error: string | null
   public_url: string | null
   pid: number | null
+}
+
+export interface UpdateTunnelRequest {
+  service_url?: string
+  label?: string
+  name?: string
+  auth_mode?: 'sso' | 'none'
+  verify_ssl?: boolean
+  websocket_enabled?: boolean
+  api_key?: string | null
 }
 
 export interface AccessRule {
@@ -72,8 +84,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // Tunnels
 export const getTunnels = () => request<TunnelStatus[]>('/tunnels')
-export const addTunnel = (body: { service_url: string; label: string; name?: string; auth_mode: string; verify_ssl?: boolean }) =>
+export const addTunnel = (body: { service_url: string; label: string; name?: string; auth_mode: string; verify_ssl?: boolean; websocket_enabled?: boolean; api_key?: string }) =>
   request<TunnelStatus>('/tunnels', { method: 'POST', body: JSON.stringify(body) })
+export const updateTunnel = (id: string, body: UpdateTunnelRequest) =>
+  request<TunnelStatus>(`/tunnels/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
 export const removeTunnel = (id: string) => request<void>(`/tunnels/${id}`, { method: 'DELETE' })
 export const startTunnel = (id: string) => request<void>(`/tunnels/${id}/start`, { method: 'POST' })
 export const stopTunnel = (id: string) => request<void>(`/tunnels/${id}/stop`, { method: 'POST' })

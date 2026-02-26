@@ -59,10 +59,7 @@ export function Settings() {
   }
 
   const subnet = netInfo?.trusted_subnet ?? '172.30.32.0/23'
-  const haYaml = `homeassistant:
-  external_url: "https://<your-tunnel>.hle.world"
-
-http:
+  const haYaml = `http:
   use_x_forwarded_for: true
   trusted_proxies:
     - ${subnet}`
@@ -117,9 +114,9 @@ http:
       <div style={section}>
         <span style={sectionTitle}>Home Assistant Setup</span>
         <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>
-          To expose Home Assistant through an HLE tunnel, add the following to your{' '}
+          Add the following to your{' '}
           <code style={{ color: '#e0e0e0' }}>configuration.yaml</code>{' '}
-          and restart Home Assistant core.
+          so Home Assistant trusts the HLE addon as a reverse proxy.
         </p>
 
         {netInfo?.addon_ip && (
@@ -136,7 +133,7 @@ http:
             {copied ? '✓ Copied!' : 'Copy YAML'}
           </button>
           <span style={{ fontSize: 12, color: '#6b7280' }}>
-            Replace <code style={{ color: '#9ca3af' }}>&lt;your-tunnel&gt;</code> with your tunnel's subdomain
+            Paste into <code style={{ color: '#9ca3af' }}>configuration.yaml</code>, then restart HA
           </span>
         </div>
 

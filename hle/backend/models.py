@@ -18,7 +18,8 @@ class TunnelConfig(BaseModel):
 
 
 class TunnelStatus(TunnelConfig):
-    state: Literal["CONNECTED", "CONNECTING", "STOPPED"] = "STOPPED"
+    state: Literal["CONNECTED", "CONNECTING", "STOPPED", "FAILED"] = "STOPPED"
+    error: Optional[str] = None  # last error line from log when state is FAILED
     public_url: Optional[str] = None
     pid: Optional[int] = None
 

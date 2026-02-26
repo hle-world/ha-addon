@@ -1,9 +1,10 @@
-type State = 'CONNECTED' | 'CONNECTING' | 'STOPPED'
+type State = 'CONNECTED' | 'CONNECTING' | 'STOPPED' | 'FAILED'
 
 const config: Record<State, { color: string; label: string; pulse: boolean }> = {
   CONNECTED:  { color: '#4ade80', label: 'Connected',  pulse: false },
   CONNECTING: { color: '#facc15', label: 'Connecting', pulse: true  },
   STOPPED:    { color: '#6b7280', label: 'Stopped',    pulse: false },
+  FAILED:     { color: '#f87171', label: 'Failed',     pulse: false },
 }
 
 export function StatusBadge({ state }: { state: string }) {

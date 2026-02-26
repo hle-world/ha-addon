@@ -16,6 +16,13 @@ DATA_FILE = Path("/data/tunnels.json")
 
 _processes: dict[str, asyncio.subprocess.Process] = {}
 
+# Confirmed connected in the current session (subdomain from disk is stale
+# until the tunnel actually re-registers with the relay).
+_connected: set[str] = set()
+
+# Tunnels explicitly stopped by the user — these show STOPPED, not FAILED.
+_user_stopped: set[str] = set()
+
 
 # ---------------------------------------------------------------------------
 # Persistence
@@ -41,7 +48,6 @@ def _save_all(tunnels: dict[str, TunnelConfig]) -> None:
 async def _spawn(cfg: TunnelConfig) -> asyncio.subprocess.Process:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_file = open(LOG_DIR / f"tunnel-{cfg.id}.log", "ab")
-    # All args passed as list — no shell injection risk
     cmd = ["hle", "expose", "--service", cfg.service_url, "--label", cfg.label, "--auth", cfg.auth_mode]
     if cfg.verify_ssl:
         cmd.append("--verify-ssl")
@@ -59,10 +65,14 @@ def _is_running(proc: asyncio.subprocess.Process | None) -> bool:
 
 
 async def _detect_subdomain(cfg_id: str, service_url: str, label: str) -> None:
-    """Background task: poll the relay API until the tunnel appears, then store its subdomain."""
+    """Poll the relay API until the tunnel appears, then mark it connected."""
     from backend import hle_api
     for _ in range(15):  # up to ~30 seconds
         await asyncio.sleep(2)
+        # Stop polling if process already exited (bad key, crash, etc.)
+        proc = _processes.get(cfg_id)
+        if not _is_running(proc):
+            return
         try:
             live = await hle_api.list_live_tunnels()
             for t in live:
@@ -73,6 +83,7 @@ async def _detect_subdomain(cfg_id: str, service_url: str, label: str) -> None:
                         if cfg_id in tunnels:
                             tunnels[cfg_id].subdomain = subdomain
                             _save_all(tunnels)
+                        _connected.add(cfg_id)
                         return
         except Exception:
             pass
@@ -87,13 +98,15 @@ async def restore_all() -> None:
         try:
             proc = await _spawn(cfg)
             _processes[cfg.id] = proc
+            # Subdomain from disk is stale — re-confirm in background
+            asyncio.create_task(_detect_subdomain(cfg.id, cfg.service_url, cfg.label))
         except Exception as exc:
             print(f"[hle] Failed to restore tunnel {cfg.id}: {exc}")
 
 
 async def shutdown_all() -> None:
-    """Terminate all tunnel processes — called on addon shutdown so HA Supervisor
-    doesn't see orphan processes blocking the container stop."""
+    """Terminate all tunnel processes on addon stop so HA Supervisor doesn't
+    see orphan processes blocking the container shutdown."""
     procs = list(_processes.items())
     for tid, proc in procs:
         if _is_running(proc):
@@ -114,18 +127,21 @@ async def add_tunnel(req: AddTunnelRequest) -> TunnelConfig:
         id=uuid.uuid4().hex[:8],
         service_url=req.service_url,
         label=req.label,
+        name=req.name,
         auth_mode=req.auth_mode,
+        verify_ssl=req.verify_ssl,
     )
     proc = await _spawn(cfg)
     _processes[cfg.id] = proc
     tunnels[cfg.id] = cfg
     _save_all(tunnels)
-    # Detect subdomain in background — updates saved state once tunnel connects
     asyncio.create_task(_detect_subdomain(cfg.id, cfg.service_url, cfg.label))
     return cfg
 
 
 async def remove_tunnel(tunnel_id: str) -> None:
+    _connected.discard(tunnel_id)
+    _user_stopped.add(tunnel_id)
     proc = _processes.pop(tunnel_id, None)
     if _is_running(proc):
         proc.terminate()
@@ -144,11 +160,15 @@ async def start_tunnel(tunnel_id: str) -> None:
     if cfg is None:
         raise KeyError(tunnel_id)
     if not _is_running(_processes.get(tunnel_id)):
+        _connected.discard(tunnel_id)
+        _user_stopped.discard(tunnel_id)
         _processes[tunnel_id] = await _spawn(cfg)
         asyncio.create_task(_detect_subdomain(cfg.id, cfg.service_url, cfg.label))
 
 
 async def stop_tunnel(tunnel_id: str) -> None:
+    _connected.discard(tunnel_id)
+    _user_stopped.add(tunnel_id)
     proc = _processes.get(tunnel_id)
     if _is_running(proc):
         proc.terminate()
@@ -167,19 +187,43 @@ def get_tunnel(tunnel_id: str) -> TunnelStatus | None:
     return _make_status(tunnel_id, cfg) if cfg else None
 
 
+def _last_error_line(tunnel_id: str) -> str | None:
+    """Return the last non-empty line from the tunnel log, used for FAILED state."""
+    log_path = LOG_DIR / f"tunnel-{tunnel_id}.log"
+    if not log_path.exists():
+        return None
+    try:
+        lines = log_path.read_text(errors="replace").splitlines()
+        for line in reversed(lines):
+            line = line.strip()
+            if line:
+                return line
+    except Exception:
+        pass
+    return None
+
+
 def _make_status(tunnel_id: str, cfg: TunnelConfig) -> TunnelStatus:
     proc = _processes.get(tunnel_id)
     running = _is_running(proc)
+    error: str | None = None
+
     if not running:
-        state = "STOPPED"
-    elif cfg.subdomain:
+        if tunnel_id in _user_stopped:
+            state = "STOPPED"
+        else:
+            state = "FAILED"
+            error = _last_error_line(tunnel_id)
+    elif tunnel_id in _connected:
         state = "CONNECTED"
     else:
         state = "CONNECTING"
+
     public_url = f"https://{cfg.subdomain}.hle.world" if cfg.subdomain else None
     return TunnelStatus(
         **cfg.model_dump(),
         state=state,
+        error=error,
         public_url=public_url,
         pid=proc.pid if running else None,
     )

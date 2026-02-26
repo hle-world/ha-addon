@@ -45,6 +45,16 @@ export interface NetworkInfo {
   trusted_subnet: string | null
 }
 
+export type HaSetupStatus =
+  | { status: 'configured' }
+  | { status: 'not_configured'; subnet: string }
+  | { status: 'has_http_section' }
+  | { status: 'no_file' }
+
+export type HaSetupApplyResult =
+  | { status: 'applied'; subnet: string }
+  | { status: 'already_configured' }
+
 const base = './api'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -95,3 +105,8 @@ export const getConfig = () => request<AddonConfig>('/config')
 export const updateConfig = (api_key: string) =>
   request<void>('/config', { method: 'POST', body: JSON.stringify({ api_key }) })
 export const getNetworkInfo = () => request<NetworkInfo>('/network-info')
+
+// HA configuration.yaml setup
+export const getHaSetupStatus = () => request<HaSetupStatus>('/ha-setup/status')
+export const applyHaSetup = () => request<HaSetupApplyResult>('/ha-setup/apply', { method: 'POST' })
+export const restartHaCore = () => request<{ status: string }>('/ha-setup/restart', { method: 'POST' })

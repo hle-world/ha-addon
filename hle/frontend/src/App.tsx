@@ -193,7 +193,7 @@ function SettingsContent({
   }
 
   // HA setup snippet shown for manual fallback
-  const subnet = haStatus?.status === 'not_configured' ? haStatus.subnet : '172.30.32.0/23'
+  const subnet = (haStatus && 'subnet' in haStatus) ? haStatus.subnet : '172.30.32.0/23'
   const yamlSnippet = `http:\n  use_x_forwarded_for: true\n  trusted_proxies:\n    - ${subnet}`
 
   return (
@@ -253,8 +253,36 @@ function SettingsContent({
             padding: '10px 14px', fontSize: 13, color: colors.green,
           }}>
             <span>✓</span>
-            <span><code style={{ color: '#86efac' }}>configuration.yaml</code> already has the proxy settings.</span>
+            <span><code style={{ color: '#86efac' }}>configuration.yaml</code> is correctly configured.</span>
           </div>
+        )}
+
+        {haStatus?.status === 'subnet_missing' && (
+          <>
+            <div style={{
+              background: '#1c1a07', border: `1px solid #713f12`,
+              borderRadius: 8, padding: '10px 14px', fontSize: 13, color: colors.yellow,
+            }}>
+              <code>configuration.yaml</code> has proxy settings but is missing this addon's subnet
+              (<code>{subnet}</code>) from <code>trusted_proxies</code>. HA will return 400 errors
+              until it is added.
+            </div>
+            {applyError && (
+              <div style={{
+                background: '#2d0a0a', border: `1px solid #7f1d1d`,
+                borderRadius: 8, padding: '10px 14px', fontSize: 13, color: colors.red,
+              }}>
+                {applyError}
+              </div>
+            )}
+            <button
+              style={applying ? btnDisabled : btnPrimary}
+              onClick={applyHa}
+              disabled={applying}
+            >
+              {applying ? 'Writing…' : `⚡ Add ${subnet} to trusted_proxies`}
+            </button>
+          </>
         )}
 
         {(haStatus?.status === 'not_configured' || haStatus?.status === 'no_file') && (

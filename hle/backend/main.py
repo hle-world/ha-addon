@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=lifespan)
 
-OPTIONS_FILE = Path("/data/options.json")
+HLE_CONFIG = Path("/data/hle_config.json")  # our own file, not managed by HA Supervisor
 STATIC_DIR = Path("/app/backend/static")
 
 
@@ -181,21 +181,25 @@ async def delete_share_link(subdomain: str, link_id: int):
 
 @app.get("/api/config")
 async def get_config():
-    if not OPTIONS_FILE.exists():
-        return {"api_key_set": False, "api_key_masked": ""}
-    data = json.loads(OPTIONS_FILE.read_text())
-    key = data.get("api_key", "")
+    # Prefer our own config file; fall back to env var set by run.sh
+    key = ""
+    if HLE_CONFIG.exists():
+        key = json.loads(HLE_CONFIG.read_text()).get("api_key", "")
+    if not key:
+        key = os.environ.get("HLE_API_KEY", "")
     masked = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else ("set" if key else "")
     return {"api_key_set": bool(key), "api_key_masked": masked}
 
 
 @app.post("/api/config", status_code=204)
 async def update_config(req: UpdateConfigRequest):
+    # Write to our own file — Supervisor owns /data/options.json and will
+    # overwrite it on addon updates, losing any direct edits.
     current = {}
-    if OPTIONS_FILE.exists():
-        current = json.loads(OPTIONS_FILE.read_text())
+    if HLE_CONFIG.exists():
+        current = json.loads(HLE_CONFIG.read_text())
     current["api_key"] = req.api_key
-    OPTIONS_FILE.write_text(json.dumps(current, indent=2))
+    HLE_CONFIG.write_text(json.dumps(current, indent=2))
     os.environ["HLE_API_KEY"] = req.api_key
 
 

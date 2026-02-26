@@ -18,7 +18,7 @@ class TunnelConfig(BaseModel):
 
 
 class TunnelStatus(TunnelConfig):
-    state: Literal["RUNNING", "STOPPED"] = "STOPPED"
+    state: Literal["CONNECTED", "CONNECTING", "STOPPED"] = "STOPPED"
     public_url: Optional[str] = None
     pid: Optional[int] = None
 

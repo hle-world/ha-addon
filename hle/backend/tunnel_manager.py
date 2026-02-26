@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import uuid
 from pathlib import Path
 
@@ -88,6 +89,23 @@ async def restore_all() -> None:
             _processes[cfg.id] = proc
         except Exception as exc:
             print(f"[hle] Failed to restore tunnel {cfg.id}: {exc}")
+
+
+async def shutdown_all() -> None:
+    """Terminate all tunnel processes — called on addon shutdown so HA Supervisor
+    doesn't see orphan processes blocking the container stop."""
+    procs = list(_processes.items())
+    for tid, proc in procs:
+        if _is_running(proc):
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                proc.terminate()
+    if procs:
+        await asyncio.gather(
+            *[proc.wait() for _, proc in procs if _is_running(proc)],
+            return_exceptions=True,
+        )
 
 
 async def add_tunnel(req: AddTunnelRequest) -> TunnelConfig:

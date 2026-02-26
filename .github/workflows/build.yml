@@ -194,4 +194,4 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           VERSION: ${{ github.event.release.tag_name }}
         run: |
-          gh release edit "${VERSION}" --prerelease=false
+          gh release edit "${VERSION}" --prerelease=false --latest

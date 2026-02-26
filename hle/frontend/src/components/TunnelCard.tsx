@@ -140,6 +140,9 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
             </span>
           </span>
           <span style={{ color: '#9ca3af', fontSize: 12 }}>{tunnel.service_url}</span>
+          {tunnel.state === 'CONNECTING' && (
+            <span style={{ color: '#facc15', fontSize: 12 }}>Establishing connection to relay…</span>
+          )}
           {tunnel.subdomain && (
             <span style={{ color: '#6b7280', fontSize: 12, fontFamily: 'monospace' }}>
               {tunnel.subdomain}.hle.world
@@ -157,7 +160,7 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
 
       {/* Action buttons */}
       <div style={row}>
-        {tunnel.state === 'RUNNING'
+        {tunnel.state !== 'STOPPED'
           ? <button style={btn('ghost')} onClick={() => stopTunnel(tunnel.id).then(onRefresh)}>Stop</button>
           : <button style={btn('primary')} onClick={() => startTunnel(tunnel.id).then(onRefresh)}>Start</button>
         }

@@ -152,10 +152,16 @@ def get_tunnel(tunnel_id: str) -> TunnelStatus | None:
 def _make_status(tunnel_id: str, cfg: TunnelConfig) -> TunnelStatus:
     proc = _processes.get(tunnel_id)
     running = _is_running(proc)
+    if not running:
+        state = "STOPPED"
+    elif cfg.subdomain:
+        state = "CONNECTED"
+    else:
+        state = "CONNECTING"
     public_url = f"https://{cfg.subdomain}.hle.world" if cfg.subdomain else None
     return TunnelStatus(
         **cfg.model_dump(),
-        state="RUNNING" if running else "STOPPED",
+        state=state,
         public_url=public_url,
         pid=proc.pid if running else None,
     )

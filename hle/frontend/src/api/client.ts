@@ -6,7 +6,7 @@ export interface TunnelStatus {
   auth_mode: 'sso' | 'none'
   verify_ssl: boolean
   subdomain: string | null
-  state: 'RUNNING' | 'STOPPED'
+  state: 'CONNECTED' | 'CONNECTING' | 'STOPPED'
   public_url: string | null
   pid: number | null
 }

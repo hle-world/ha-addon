@@ -35,11 +35,11 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  async function submit(overrides?: { service_url: string; label: string; auth_mode: 'sso' | 'none' }) {
+  async function submit() {
     setLoading(true)
     setError('')
     try {
-      await addTunnel(overrides ?? { service_url: serviceUrl, label, auth_mode: authMode, verify_ssl: verifySsl })
+      await addTunnel({ service_url: serviceUrl, label, auth_mode: authMode, verify_ssl: verifySsl })
       onAdded()
     } catch (e) {
       setError(String(e))
@@ -54,8 +54,9 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
         <h2 style={{ fontSize: 17, fontWeight: 700 }}>Add Tunnel</h2>
 
         <button style={{ ...btn(false), textAlign: 'left', padding: '10px 14px', border: '1px dashed #3b82f6' }}
-          onClick={() => submit(HA_PRESET)} disabled={loading}>
-          ⚡ Expose Home Assistant (ha-xxx.hle.world + SSO)
+          onClick={() => { setServiceUrl(HA_PRESET.service_url); setLabel(HA_PRESET.label); setAuthMode(HA_PRESET.auth_mode) }}
+          disabled={loading}>
+          ⚡ Quick-fill: Expose Home Assistant
         </button>
 
         <hr style={{ border: 'none', borderTop: '1px solid #2d3139' }} />
@@ -95,14 +96,17 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', fontSize: 14 }}>
           <input type="checkbox" checked={verifySsl} onChange={e => setVerifySsl(e.target.checked)} />
           <span>Verify SSL certificate</span>
-          <span style={{ fontSize: 12, color: '#6b7280' }}>(enable for services with valid certs; leave off for self-signed)</span>
+          <span
+            title="By default, SSL verification is disabled so self-signed certificates (common on Proxmox, Unraid, TrueNAS, etc.) work without extra setup. Enable this only if your service has a valid certificate from a trusted CA."
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', background: '#2d3139', color: '#9ca3af', fontSize: 11, fontWeight: 700, cursor: 'help', userSelect: 'none' }}
+          >?</span>
         </label>
 
         {error && <p style={{ color: '#f87171', fontSize: 13 }}>{error}</p>}
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button style={btn(false)} onClick={onClose}>Cancel</button>
-          <button style={btn(true)} onClick={() => submit()} disabled={loading || !serviceUrl || !label}>
+          <button style={btn(true)} onClick={submit} disabled={loading || !serviceUrl || !label}>
             {loading ? 'Adding...' : 'Add Tunnel'}
           </button>
         </div>

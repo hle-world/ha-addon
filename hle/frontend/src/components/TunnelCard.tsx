@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { TunnelStatus, AccessRule, ShareLink } from '../api/client'
 import {
-  startTunnel, stopTunnel, removeTunnel,
+  startTunnel, stopTunnel, removeTunnel, updateTunnel,
   getAccessRules, addAccessRule, deleteAccessRule,
   getPinStatus, setPin, removePin,
   getShareLinks, createShareLink, deleteShareLink,
@@ -33,7 +33,7 @@ const inputSm: React.CSSProperties = {
   background: '#111318', color: '#e0e0e0', fontSize: 13,
 }
 
-type Panel = 'access' | 'pin' | 'share' | 'logs' | null
+type Panel = 'access' | 'pin' | 'share' | 'logs' | 'edit' | null
 
 export function TunnelCard({ tunnel, onRefresh }: Props) {
   const [panel, setPanel] = useState<Panel>(null)
@@ -57,12 +57,32 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
   // Logs state
   const [logs, setLogs] = useState<string[] | null>(null)
 
+  // Edit state (mirrors current tunnel values)
+  const [editServiceUrl, setEditServiceUrl] = useState(tunnel.service_url)
+  const [editLabel, setEditLabel] = useState(tunnel.label)
+  const [editName, setEditName] = useState(tunnel.name ?? '')
+  const [editAuthMode, setEditAuthMode] = useState<'sso' | 'none'>(tunnel.auth_mode)
+  const [editVerifySsl, setEditVerifySsl] = useState(tunnel.verify_ssl)
+  const [editWebsocket, setEditWebsocket] = useState(tunnel.websocket_enabled)
+  const [editApiKey, setEditApiKey] = useState(tunnel.api_key ?? '')
+  const [editSaving, setEditSaving] = useState(false)
+
   const sub = tunnel.subdomain
 
   async function togglePanel(p: Panel) {
     setError('')
     setNewShareUrl(null)
     if (panel === p) { setPanel(null); return }
+    // Reset edit form to current values when opening
+    if (p === 'edit') {
+      setEditServiceUrl(tunnel.service_url)
+      setEditLabel(tunnel.label)
+      setEditName(tunnel.name ?? '')
+      setEditAuthMode(tunnel.auth_mode)
+      setEditVerifySsl(tunnel.verify_ssl)
+      setEditWebsocket(tunnel.websocket_enabled)
+      setEditApiKey(tunnel.api_key ?? '')
+    }
     setPanel(p)
     if (!sub) return
     try {
@@ -74,6 +94,28 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
       if (p === 'share' && shareLinks === null) setShareLinks(await getShareLinks(sub))
       if (p === 'logs') setLogs((await getTunnelLogs(tunnel.id)).lines)
     } catch (e) { setError(String(e)) }
+  }
+
+  async function handleSaveEdit() {
+    setEditSaving(true)
+    setError('')
+    try {
+      await updateTunnel(tunnel.id, {
+        service_url: editServiceUrl,
+        label: editLabel,
+        name: editName || undefined,
+        auth_mode: editAuthMode,
+        verify_ssl: editVerifySsl,
+        websocket_enabled: editWebsocket,
+        api_key: editApiKey || null,
+      })
+      setPanel(null)
+      onRefresh()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setEditSaving(false)
+    }
   }
 
   async function handleAddRule() {
@@ -171,6 +213,9 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
               {tunnel.state === 'FAILED' ? 'Retry' : 'Start'}
             </button>
         }
+        <button style={btn(panel === 'edit' ? 'active' : 'ghost')} onClick={() => togglePanel('edit')}>
+          Edit
+        </button>
         {sub && isSso && (
           <button style={btn(panel === 'access' ? 'active' : 'ghost')} onClick={() => togglePanel('access')}>
             Access Rules
@@ -196,6 +241,72 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
       </div>
 
       {error && <p style={{ color: '#f87171', fontSize: 13, margin: 0 }}>{error}</p>}
+
+      {/* Edit panel */}
+      {panel === 'edit' && (
+        <div style={section}>
+          <span style={sectionTitle}>Edit Tunnel Settings</span>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>Saving will restart the tunnel process.</span>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, color: '#9ca3af' }}>Service URL</label>
+              <input style={inputSm} value={editServiceUrl} onChange={e => setEditServiceUrl(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, color: '#9ca3af' }}>Label (subdomain prefix)</label>
+              <input style={inputSm} value={editLabel} onChange={e => setEditLabel(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, color: '#9ca3af' }}>Display name (optional)</label>
+              <input style={inputSm} value={editName} onChange={e => setEditName(e.target.value)} placeholder="e.g. Home Assistant" />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, color: '#9ca3af' }}>Auth mode</label>
+              <select style={inputSm} value={editAuthMode} onChange={e => setEditAuthMode(e.target.value as 'sso' | 'none')}>
+                <option value="sso">SSO (recommended)</option>
+                <option value="none">Open (no auth)</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 12, color: '#9ca3af' }}>
+              API key override{' '}
+              <span style={{ color: '#6b7280', fontWeight: 400 }}>(leave blank to use global key; set to clear override)</span>
+            </label>
+            <input style={{ ...inputSm, fontFamily: 'monospace' }} value={editApiKey}
+              onChange={e => setEditApiKey(e.target.value)}
+              placeholder="hle_... (optional)" type="password" />
+          </div>
+
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', fontSize: 13 }}>
+              <input type="checkbox" checked={editVerifySsl} onChange={e => setEditVerifySsl(e.target.checked)} />
+              Verify SSL
+              <span
+                title="Enable only if the service has a valid CA-signed certificate. Self-signed certs will fail."
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#2d3139', color: '#9ca3af', fontSize: 10, fontWeight: 700, cursor: 'help' }}
+              >?</span>
+            </label>
+            <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', fontSize: 13 }}>
+              <input type="checkbox" checked={editWebsocket} onChange={e => setEditWebsocket(e.target.checked)} />
+              Enable WebSocket
+              <span
+                title="Required for Home Assistant, VS Code Server, and other services that use WebSockets."
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#2d3139', color: '#9ca3af', fontSize: 10, fontWeight: 700, cursor: 'help' }}
+              >?</span>
+            </label>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button style={btn('primary')} onClick={handleSaveEdit} disabled={editSaving || !editServiceUrl || !editLabel}>
+              {editSaving ? 'Saving...' : 'Save & Restart'}
+            </button>
+            <button style={btn('ghost')} onClick={() => setPanel(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* Access Rules panel */}
       {panel === 'access' && (

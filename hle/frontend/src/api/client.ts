@@ -59,8 +59,9 @@ export interface NetworkInfo {
 
 export type HaSetupStatus =
   | { status: 'configured' }
+  | { status: 'subnet_missing'; subnet: string }
   | { status: 'not_configured'; subnet: string }
-  | { status: 'has_http_section' }
+  | { status: 'has_http_section'; subnet: string }
   | { status: 'no_file' }
 
 export type HaSetupApplyResult =

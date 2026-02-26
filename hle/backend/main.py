@@ -213,21 +213,35 @@ async def ha_setup_status():
     if not HA_CONFIG.exists():
         return {"status": "no_file"}
     text = HA_CONFIG.read_text(errors="replace")
+    subnet = _detect_subnet()
     if "use_x_forwarded_for" in text:
-        return {"status": "configured"}
+        # Also verify the addon's subnet is actually listed — having
+        # use_x_forwarded_for without our subnet still causes 400 errors.
+        if subnet in text:
+            return {"status": "configured"}
+        return {"status": "subnet_missing", "subnet": subnet}
     if re.search(r"^http:", text, re.MULTILINE):
-        return {"status": "has_http_section"}
-    return {"status": "not_configured", "subnet": _detect_subnet()}
+        return {"status": "has_http_section", "subnet": subnet}
+    return {"status": "not_configured", "subnet": subnet}
 
 
 @app.post("/api/ha-setup/apply")
 async def ha_setup_apply():
-    """Append the http proxy block to configuration.yaml."""
+    """Append the http proxy block (or just the missing subnet) to configuration.yaml."""
     if not HA_CONFIG.exists():
         raise HTTPException(status_code=404, detail="configuration.yaml not found at /config/")
     text = HA_CONFIG.read_text(errors="replace")
+    subnet = _detect_subnet()
+
     if "use_x_forwarded_for" in text:
-        return {"status": "already_configured"}
+        if subnet in text:
+            return {"status": "already_configured", "subnet": subnet}
+        # http block exists with use_x_forwarded_for but our subnet is missing —
+        # append just the subnet entry under the existing trusted_proxies list.
+        new_text = text.rstrip() + f"\n    - {subnet}  # Added by HLE addon\n"
+        HA_CONFIG.write_text(new_text)
+        return {"status": "applied", "subnet": subnet}
+
     if re.search(r"^http:", text, re.MULTILINE):
         raise HTTPException(
             status_code=409,
@@ -237,7 +251,7 @@ async def ha_setup_apply():
                 "Please add it manually."
             ),
         )
-    subnet = _detect_subnet()
+
     block = (
         "\n# Added by HLE addon — required for tunnel reverse-proxy support\n"
         "http:\n"

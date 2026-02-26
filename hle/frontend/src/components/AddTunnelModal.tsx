@@ -25,14 +25,16 @@ const btn = (primary: boolean): React.CSSProperties => ({
   background: primary ? '#3b82f6' : '#2d3139', color: '#fff', fontSize: 14, fontWeight: 500,
 })
 
-const HA_PRESET = { service_url: 'http://homeassistant.local.hass.io:8123', label: 'ha', name: 'Home Assistant', auth_mode: 'sso' as const }
+const HA_PRESET = { service_url: 'http://homeassistant.local.hass.io:8123', label: 'ha', name: 'Home Assistant' }
 
 export function AddTunnelModal({ onClose, onAdded }: Props) {
   const [serviceUrl, setServiceUrl] = useState('')
   const [label, setLabel] = useState('')
   const [name, setName] = useState('')
-  const [authMode, setAuthMode] = useState<'sso' | 'none'>('sso')
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [verifySsl, setVerifySsl] = useState(false)
+  const [websocket, setWebsocket] = useState(true)
+  const [apiKeyOverride, setApiKeyOverride] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -40,7 +42,15 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
     setLoading(true)
     setError('')
     try {
-      await addTunnel({ service_url: serviceUrl, label, name: name || undefined, auth_mode: authMode, verify_ssl: verifySsl })
+      await addTunnel({
+        service_url: serviceUrl,
+        label,
+        name: name || undefined,
+        auth_mode: 'sso',
+        verify_ssl: verifySsl,
+        websocket_enabled: websocket,
+        api_key: apiKeyOverride || undefined,
+      })
       onAdded()
     } catch (e) {
       setError(String(e))
@@ -55,7 +65,7 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
         <h2 style={{ fontSize: 17, fontWeight: 700 }}>Add Tunnel</h2>
 
         <button style={{ ...btn(false), textAlign: 'left', padding: '10px 14px', border: '1px dashed #3b82f6' }}
-          onClick={() => { setServiceUrl(HA_PRESET.service_url); setLabel(HA_PRESET.label); setName(HA_PRESET.name); setAuthMode(HA_PRESET.auth_mode) }}
+          onClick={() => { setServiceUrl(HA_PRESET.service_url); setLabel(HA_PRESET.label); setName(HA_PRESET.name) }}
           disabled={loading}>
           ⚡ Quick-fill: Expose Home Assistant
         </button>
@@ -83,31 +93,44 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
           </span>
         </div>
 
-        <div style={fieldStyle}>
-          <label style={labelStyle}>Auth mode</label>
-          <div style={{ display: 'flex', gap: 10 }}>
-            {(['sso', 'none'] as const).map(m => (
-              <label key={m} style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', fontSize: 14 }}>
-                <input type="radio" value={m} checked={authMode === m} onChange={() => setAuthMode(m)} />
-                {m === 'sso' ? '🔒 SSO (recommended)' : '🌐 Open'}
-              </label>
-            ))}
-          </div>
-          {authMode === 'sso' && (
-            <span style={{ fontSize: 12, color: '#6b7280' }}>
-              After creating, use Access Rules to restrict to specific emails.
-            </span>
-          )}
-        </div>
+        {/* Advanced toggle */}
+        <button
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', fontSize: 13, textAlign: 'left', padding: 0 }}
+          onClick={() => setShowAdvanced(v => !v)}
+        >
+          {showAdvanced ? '▾' : '▸'} Advanced options
+        </button>
 
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', fontSize: 14 }}>
-          <input type="checkbox" checked={verifySsl} onChange={e => setVerifySsl(e.target.checked)} />
-          <span>Verify SSL certificate</span>
-          <span
-            title="By default, SSL verification is disabled so self-signed certificates (common on Proxmox, Unraid, TrueNAS, etc.) work without extra setup. Enable this only if your service has a valid certificate from a trusted CA."
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', background: '#2d3139', color: '#9ca3af', fontSize: 11, fontWeight: 700, cursor: 'help', userSelect: 'none' }}
-          >?</span>
-        </label>
+        {showAdvanced && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingLeft: 12, borderLeft: '2px solid #2d3139' }}>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', fontSize: 14 }}>
+              <input type="checkbox" checked={verifySsl} onChange={e => setVerifySsl(e.target.checked)} />
+              <span>Verify SSL certificate</span>
+              <span
+                title="By default, SSL verification is disabled so self-signed certificates (common on Proxmox, Unraid, TrueNAS, etc.) work without extra setup. Enable this only if your service has a valid certificate from a trusted CA."
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', background: '#2d3139', color: '#9ca3af', fontSize: 11, fontWeight: 700, cursor: 'help', userSelect: 'none' }}
+              >?</span>
+            </label>
+
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', fontSize: 14 }}>
+              <input type="checkbox" checked={websocket} onChange={e => setWebsocket(e.target.checked)} />
+              <span>Enable WebSocket support</span>
+              <span
+                title="Required for services that use WebSockets (Home Assistant, VS Code Server, etc.). Disable only if the service does not support them and you're seeing connection issues."
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', background: '#2d3139', color: '#9ca3af', fontSize: 11, fontWeight: 700, cursor: 'help', userSelect: 'none' }}
+              >?</span>
+            </label>
+
+            <div style={fieldStyle}>
+              <label style={{ ...labelStyle, fontSize: 12 }}>
+                API key override <span style={{ color: '#6b7280', fontWeight: 400 }}>(optional — uses global key if blank)</span>
+              </label>
+              <input style={{ ...inputStyle, fontSize: 13 }} value={apiKeyOverride}
+                onChange={e => setApiKeyOverride(e.target.value)}
+                placeholder="hle_..." type="password" />
+            </div>
+          </div>
+        )}
 
         {error && <p style={{ color: '#f87171', fontSize: 13 }}>{error}</p>}
 

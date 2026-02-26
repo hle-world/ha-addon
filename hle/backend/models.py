@@ -11,6 +11,7 @@ class TunnelConfig(BaseModel):
     id: str
     service_url: str
     label: str
+    name: Optional[str] = None  # display name; falls back to label if not set
     auth_mode: Literal["sso", "none"] = "sso"
     verify_ssl: bool = False
     subdomain: Optional[str] = None  # populated once tunnel connects to relay
@@ -25,6 +26,7 @@ class TunnelStatus(TunnelConfig):
 class AddTunnelRequest(BaseModel):
     service_url: str
     label: str
+    name: Optional[str] = None
     auth_mode: Literal["sso", "none"] = "sso"
     verify_ssl: bool = False
 

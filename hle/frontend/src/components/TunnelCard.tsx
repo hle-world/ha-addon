@@ -129,7 +129,12 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           <span style={{ fontWeight: 700, fontSize: 15 }}>
-            {tunnel.label}
+            {tunnel.name || tunnel.label}
+            {tunnel.name && (
+              <span style={{ color: '#6b7280', fontWeight: 400, marginLeft: 8, fontSize: 12 }}>
+                {tunnel.label}
+              </span>
+            )}
             <span style={{ color: '#6b7280', fontWeight: 400, marginLeft: 8, fontSize: 13 }}>
               {isSso ? '🔒 SSO' : '🌐 Open'}
             </span>

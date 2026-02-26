@@ -42,6 +42,8 @@ async def _spawn(cfg: TunnelConfig) -> asyncio.subprocess.Process:
     log_file = open(LOG_DIR / f"tunnel-{cfg.id}.log", "ab")
     # All args passed as list — no shell injection risk
     cmd = ["hle", "expose", "--service", cfg.service_url, "--label", cfg.label, "--auth", cfg.auth_mode]
+    if cfg.verify_ssl:
+        cmd.append("--verify-ssl")
     return await asyncio.create_subprocess_exec(
         *cmd,
         stdout=log_file,

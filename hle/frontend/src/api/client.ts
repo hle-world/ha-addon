@@ -3,6 +3,7 @@ export interface TunnelStatus {
   service_url: string
   label: string
   auth_mode: 'sso' | 'none'
+  verify_ssl: boolean
   subdomain: string | null
   state: 'RUNNING' | 'STOPPED'
   public_url: string | null
@@ -54,7 +55,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // Tunnels
 export const getTunnels = () => request<TunnelStatus[]>('/tunnels')
-export const addTunnel = (body: { service_url: string; label: string; auth_mode: string }) =>
+export const addTunnel = (body: { service_url: string; label: string; auth_mode: string; verify_ssl?: boolean }) =>
   request<TunnelStatus>('/tunnels', { method: 'POST', body: JSON.stringify(body) })
 export const removeTunnel = (id: string) => request<void>(`/tunnels/${id}`, { method: 'DELETE' })
 export const startTunnel = (id: string) => request<void>(`/tunnels/${id}/start`, { method: 'POST' })

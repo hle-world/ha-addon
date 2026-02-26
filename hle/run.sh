@@ -1,14 +1,12 @@
 #!/usr/bin/with-contenv bashio
 
 API_KEY=$(bashio::config 'api_key')
-RELAY_HOST=$(bashio::config 'relay_host')
 
 if bashio::var.is_empty "${API_KEY}"; then
     bashio::log.warning "No API key configured. Open the HLE panel to set one."
 fi
 
 export HLE_API_KEY="${API_KEY}"
-export HLE_RELAY_HOST="${RELAY_HOST}"
 
 mkdir -p /data/logs
 

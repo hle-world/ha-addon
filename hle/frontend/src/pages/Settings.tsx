@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { getConfig, updateConfig } from '../api/client'
 
 const field: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6 }
-const label: React.CSSProperties = { fontSize: 13, color: '#9ca3af', fontWeight: 500 }
+const labelStyle: React.CSSProperties = { fontSize: 13, color: '#9ca3af', fontWeight: 500 }
 const input: React.CSSProperties = {
   padding: '8px 12px', borderRadius: 7, border: '1px solid #2d3139',
   background: '#1e2128', color: '#e0e0e0', fontSize: 14, width: '100%',
@@ -14,15 +14,15 @@ const btn: React.CSSProperties = {
 
 export function Settings() {
   const [apiKey, setApiKey] = useState('')
-  const [relayHost, setRelayHost] = useState('hle.world')
   const [masked, setMasked] = useState('')
+  const [apiKeySet, setApiKeySet] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     getConfig().then(cfg => {
-      setRelayHost(cfg.relay_host)
       setMasked(cfg.api_key_masked)
+      setApiKeySet(cfg.api_key_set)
     }).catch(e => setError(String(e)))
   }, [])
 
@@ -30,11 +30,12 @@ export function Settings() {
     setError('')
     setSaved(false)
     try {
-      await updateConfig(apiKey, relayHost)
+      await updateConfig(apiKey)
       setSaved(true)
       setApiKey('')
       const cfg = await getConfig()
       setMasked(cfg.api_key_masked)
+      setApiKeySet(cfg.api_key_set)
     } catch (e) {
       setError(String(e))
     }
@@ -44,8 +45,14 @@ export function Settings() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 480 }}>
       <h1 style={{ fontSize: 20, fontWeight: 700 }}>Settings</h1>
 
+      {!apiKeySet && (
+        <div style={{ background: '#422006', border: '1px solid #92400e', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#fbbf24' }}>
+          No API key configured. Add your key below to start using tunnels.
+        </div>
+      )}
+
       <div style={field}>
-        <label style={label}>API Key</label>
+        <label style={labelStyle}>API Key</label>
         {masked && (
           <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
             Current: <code style={{ color: '#9ca3af' }}>{masked}</code>
@@ -65,22 +72,10 @@ export function Settings() {
         </span>
       </div>
 
-      <div style={field}>
-        <label style={label}>Relay Host</label>
-        <input
-          style={input}
-          value={relayHost}
-          onChange={e => setRelayHost(e.target.value)}
-          placeholder="hle.world"
-        />
-      </div>
-
       {error && <p style={{ color: '#f87171', fontSize: 13 }}>{error}</p>}
       {saved && <p style={{ color: '#4ade80', fontSize: 13 }}>Saved. Tunnels will use the new key on next start.</p>}
 
-      <button style={btn} onClick={save} disabled={!apiKey && !relayHost}>
-        Save
-      </button>
+      <button style={btn} onClick={save} disabled={!apiKey}>Save</button>
     </div>
   )
 }

@@ -20,11 +20,9 @@ panel_title: HLE
 
 options:
   api_key: ""
-  relay_host: "hle.world"
 
 schema:
   api_key: password
-  relay_host: str
 
 map:
   - data

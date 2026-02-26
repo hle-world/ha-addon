@@ -12,7 +12,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles  # noqa: F401 — used in conditional mount below
 
 from backend import hle_api
-from backend.models import AddAccessRuleRequest, AddTunnelRequest, TunnelStatus, UpdateConfigRequest
+from backend.models import (
+    AddAccessRuleRequest, AddTunnelRequest, CreateShareLinkRequest,
+    SetPinRequest, TunnelStatus, UpdateConfigRequest,
+)
 from backend import tunnel_manager as tm
 
 
@@ -27,6 +30,16 @@ app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=li
 OPTIONS_FILE = Path("/data/options.json")
 STATIC_DIR = Path("/app/backend/static")
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _require_api_key() -> None:
+    if not os.environ.get("HLE_API_KEY"):
+        raise HTTPException(status_code=400, detail="API key not configured. Set it in Settings first.")
+
+
 # ---------------------------------------------------------------------------
 # Tunnel management
 # ---------------------------------------------------------------------------
@@ -38,6 +51,7 @@ async def list_tunnels():
 
 @app.post("/api/tunnels", response_model=TunnelStatus, status_code=201)
 async def add_tunnel(req: AddTunnelRequest):
+    _require_api_key()
     cfg = await tm.add_tunnel(req)
     return tm.get_tunnel(cfg.id)
 
@@ -64,7 +78,21 @@ async def stop_tunnel(tunnel_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Access rules (proxy to HLE relay API)
+# Tunnel logs
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tunnels/{tunnel_id}/logs")
+async def get_tunnel_logs(tunnel_id: str, lines: int = 100):
+    log_path = Path(f"/data/logs/tunnel-{tunnel_id}.log")
+    if not log_path.exists():
+        return {"lines": []}
+    text = log_path.read_text(errors="replace")
+    all_lines = text.splitlines()
+    return {"lines": all_lines[-lines:]}
+
+
+# ---------------------------------------------------------------------------
+# Access rules (keyed by subdomain, proxied to relay)
 # ---------------------------------------------------------------------------
 
 @app.get("/api/tunnels/{subdomain}/access")
@@ -92,35 +120,83 @@ async def delete_access_rule(subdomain: str, rule_id: int):
 
 
 # ---------------------------------------------------------------------------
+# PIN protection (keyed by subdomain)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tunnels/{subdomain}/pin")
+async def get_pin_status(subdomain: str):
+    try:
+        return await hle_api.get_pin_status(subdomain)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+
+
+@app.put("/api/tunnels/{subdomain}/pin", status_code=204)
+async def set_pin(subdomain: str, req: SetPinRequest):
+    try:
+        await hle_api.set_pin(subdomain, req.pin)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+
+
+@app.delete("/api/tunnels/{subdomain}/pin", status_code=204)
+async def remove_pin(subdomain: str):
+    try:
+        await hle_api.remove_pin(subdomain)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+
+
+# ---------------------------------------------------------------------------
+# Share links (keyed by subdomain)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tunnels/{subdomain}/share")
+async def list_share_links(subdomain: str):
+    try:
+        return await hle_api.list_share_links(subdomain)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+
+
+@app.post("/api/tunnels/{subdomain}/share", status_code=201)
+async def create_share_link(subdomain: str, req: CreateShareLinkRequest):
+    try:
+        return await hle_api.create_share_link(subdomain, req.duration, req.label, req.max_uses)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+
+
+@app.delete("/api/tunnels/{subdomain}/share/{link_id}", status_code=204)
+async def delete_share_link(subdomain: str, link_id: int):
+    try:
+        await hle_api.delete_share_link(subdomain, link_id)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+
+
+# ---------------------------------------------------------------------------
 # Add-on config
 # ---------------------------------------------------------------------------
 
 @app.get("/api/config")
 async def get_config():
     if not OPTIONS_FILE.exists():
-        return {"api_key": "", "relay_host": "hle.world"}
+        return {"api_key_set": False, "api_key_masked": ""}
     data = json.loads(OPTIONS_FILE.read_text())
-    # Mask the key so the frontend can show it's set without exposing it
     key = data.get("api_key", "")
     masked = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else ("set" if key else "")
-    return {"api_key_set": bool(key), "api_key_masked": masked, "relay_host": data.get("relay_host", "hle.world")}
+    return {"api_key_set": bool(key), "api_key_masked": masked}
 
 
 @app.post("/api/config", status_code=204)
 async def update_config(req: UpdateConfigRequest):
-    """
-    Persist a new API key and relay host to /data/options.json and update env vars
-    so that ApiClient picks them up without a restart.
-    HA Supervisor will honour /data/options.json on the next add-on restart.
-    """
     current = {}
     if OPTIONS_FILE.exists():
         current = json.loads(OPTIONS_FILE.read_text())
     current["api_key"] = req.api_key
-    current["relay_host"] = req.relay_host
     OPTIONS_FILE.write_text(json.dumps(current, indent=2))
     os.environ["HLE_API_KEY"] = req.api_key
-    os.environ["HLE_RELAY_HOST"] = req.relay_host
 
 
 # ---------------------------------------------------------------------------

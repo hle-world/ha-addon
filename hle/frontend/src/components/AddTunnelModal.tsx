@@ -25,7 +25,6 @@ const btn = (primary: boolean): React.CSSProperties => ({
   background: primary ? '#3b82f6' : '#2d3139', color: '#fff', fontSize: 14, fontWeight: 500,
 })
 
-// Preset for exposing HA itself
 const HA_PRESET = { service_url: 'http://homeassistant.local.hass.io:8123', label: 'ha', auth_mode: 'sso' as const }
 
 export function AddTunnelModal({ onClose, onAdded }: Props) {
@@ -53,10 +52,9 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
       <div style={modal}>
         <h2 style={{ fontSize: 17, fontWeight: 700 }}>Add Tunnel</h2>
 
-        {/* Quick-add HA */}
         <button style={{ ...btn(false), textAlign: 'left', padding: '10px 14px', border: '1px dashed #3b82f6' }}
           onClick={() => submit(HA_PRESET)} disabled={loading}>
-          ⚡ Expose Home Assistant (ha.xxx.hle.world + SSO)
+          ⚡ Expose Home Assistant (ha-xxx.hle.world + SSO)
         </button>
 
         <hr style={{ border: 'none', borderTop: '1px solid #2d3139' }} />
@@ -72,7 +70,7 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
           <input style={inputStyle} value={label} onChange={e => setLabel(e.target.value)}
             placeholder="jellyfin" />
           <span style={{ fontSize: 12, color: '#6b7280' }}>
-            Used in the subdomain: <code style={{ color: '#9ca3af' }}>{label || 'label'}.xxx.hle.world</code>
+            Subdomain: <code style={{ color: '#9ca3af' }}>{label || 'label'}-xxx.hle.world</code>
           </span>
         </div>
 
@@ -86,6 +84,11 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
               </label>
             ))}
           </div>
+          {authMode === 'sso' && (
+            <span style={{ fontSize: 12, color: '#6b7280' }}>
+              After creating, use Access Rules to restrict to specific emails.
+            </span>
+          )}
         </div>
 
         {error && <p style={{ color: '#f87171', fontSize: 13 }}>{error}</p>}

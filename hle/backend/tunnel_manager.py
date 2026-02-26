@@ -13,7 +13,6 @@ from backend.models import AddTunnelRequest, TunnelConfig, TunnelStatus
 LOG_DIR = Path("/data/logs")
 DATA_FILE = Path("/data/tunnels.json")
 
-# In-memory registry: tunnel_id -> running asyncio subprocess
 _processes: dict[str, asyncio.subprocess.Process] = {}
 
 
@@ -40,16 +39,9 @@ def _save_all(tunnels: dict[str, TunnelConfig]) -> None:
 
 async def _spawn(cfg: TunnelConfig) -> asyncio.subprocess.Process:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    log_path = LOG_DIR / f"tunnel-{cfg.id}.log"
-    log_file = open(log_path, "ab")  # noqa: WPS515 — kept open for subprocess lifetime
-    # Arguments passed as list — no shell, no injection risk
-    cmd = [
-        "hle", "expose",
-        "--service", cfg.service_url,
-        "--label", cfg.label,
-        "--auth", cfg.auth_mode,
-        "--relay-host", cfg.relay_host,
-    ]
+    log_file = open(LOG_DIR / f"tunnel-{cfg.id}.log", "ab")
+    # All args passed as list — no shell injection risk
+    cmd = ["hle", "expose", "--service", cfg.service_url, "--label", cfg.label, "--auth", cfg.auth_mode]
     return await asyncio.create_subprocess_exec(
         *cmd,
         stdout=log_file,
@@ -63,12 +55,31 @@ def _is_running(proc: asyncio.subprocess.Process | None) -> bool:
     return proc is not None and proc.returncode is None
 
 
+async def _detect_subdomain(cfg_id: str, service_url: str, label: str) -> None:
+    """Background task: poll the relay API until the tunnel appears, then store its subdomain."""
+    from backend import hle_api
+    for _ in range(15):  # up to ~30 seconds
+        await asyncio.sleep(2)
+        try:
+            live = await hle_api.list_live_tunnels()
+            for t in live:
+                if t.get("service_url") == service_url or t.get("service_label") == label:
+                    subdomain = t.get("subdomain") or t.get("service_label")
+                    if subdomain:
+                        tunnels = _load_all()
+                        if cfg_id in tunnels:
+                            tunnels[cfg_id].subdomain = subdomain
+                            _save_all(tunnels)
+                        return
+        except Exception:
+            pass
+
+
 # ---------------------------------------------------------------------------
 # Public async API
 # ---------------------------------------------------------------------------
 
 async def restore_all() -> None:
-    """Called at startup: re-spawn all persisted tunnels."""
     for cfg in _load_all().values():
         try:
             proc = await _spawn(cfg)
@@ -84,12 +95,13 @@ async def add_tunnel(req: AddTunnelRequest) -> TunnelConfig:
         service_url=req.service_url,
         label=req.label,
         auth_mode=req.auth_mode,
-        relay_host=os.environ.get("HLE_RELAY_HOST", "hle.world"),
     )
     proc = await _spawn(cfg)
     _processes[cfg.id] = proc
     tunnels[cfg.id] = cfg
     _save_all(tunnels)
+    # Detect subdomain in background — updates saved state once tunnel connects
+    asyncio.create_task(_detect_subdomain(cfg.id, cfg.service_url, cfg.label))
     return cfg
 
 
@@ -113,6 +125,7 @@ async def start_tunnel(tunnel_id: str) -> None:
         raise KeyError(tunnel_id)
     if not _is_running(_processes.get(tunnel_id)):
         _processes[tunnel_id] = await _spawn(cfg)
+        asyncio.create_task(_detect_subdomain(cfg.id, cfg.service_url, cfg.label))
 
 
 async def stop_tunnel(tunnel_id: str) -> None:
@@ -130,18 +143,17 @@ def list_tunnels() -> list[TunnelStatus]:
 
 
 def get_tunnel(tunnel_id: str) -> TunnelStatus | None:
-    tunnels = _load_all()
-    cfg = tunnels.get(tunnel_id)
-    if cfg is None:
-        return None
-    return _make_status(tunnel_id, cfg)
+    cfg = _load_all().get(tunnel_id)
+    return _make_status(tunnel_id, cfg) if cfg else None
 
 
 def _make_status(tunnel_id: str, cfg: TunnelConfig) -> TunnelStatus:
     proc = _processes.get(tunnel_id)
     running = _is_running(proc)
+    public_url = f"https://{cfg.subdomain}.hle.world" if cfg.subdomain else None
     return TunnelStatus(
         **cfg.model_dump(),
         state="RUNNING" if running else "STOPPED",
+        public_url=public_url,
         pid=proc.pid if running else None,
     )

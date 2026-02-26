@@ -3,8 +3,8 @@ export interface TunnelStatus {
   service_url: string
   label: string
   auth_mode: 'sso' | 'none'
-  relay_host: string
-  state: 'RUNNING' | 'STOPPED' | 'STARTING' | 'FATAL' | 'UNKNOWN'
+  subdomain: string | null
+  state: 'RUNNING' | 'STOPPED'
   public_url: string | null
   pid: number | null
 }
@@ -16,10 +16,25 @@ export interface AccessRule {
   created_at: string
 }
 
+export interface PinStatus {
+  has_pin: boolean
+  updated_at: string | null
+}
+
+export interface ShareLink {
+  id: number
+  label: string
+  token_prefix: string
+  share_url: string
+  expires_at: string
+  max_uses: number | null
+  use_count: number
+  is_active: boolean
+}
+
 export interface AddonConfig {
   api_key_set: boolean
   api_key_masked: string
-  relay_host: string
 }
 
 const base = './api'
@@ -39,34 +54,35 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // Tunnels
 export const getTunnels = () => request<TunnelStatus[]>('/tunnels')
-
 export const addTunnel = (body: { service_url: string; label: string; auth_mode: string }) =>
   request<TunnelStatus>('/tunnels', { method: 'POST', body: JSON.stringify(body) })
-
-export const removeTunnel = (id: string) =>
-  request<void>(`/tunnels/${id}`, { method: 'DELETE' })
-
-export const startTunnel = (id: string) =>
-  request<void>(`/tunnels/${id}/start`, { method: 'POST' })
-
-export const stopTunnel = (id: string) =>
-  request<void>(`/tunnels/${id}/stop`, { method: 'POST' })
+export const removeTunnel = (id: string) => request<void>(`/tunnels/${id}`, { method: 'DELETE' })
+export const startTunnel = (id: string) => request<void>(`/tunnels/${id}/start`, { method: 'POST' })
+export const stopTunnel = (id: string) => request<void>(`/tunnels/${id}/stop`, { method: 'POST' })
+export const getTunnelLogs = (id: string, lines = 200) =>
+  request<{ lines: string[] }>(`/tunnels/${id}/logs?lines=${lines}`)
 
 // Access rules
-export const getAccessRules = (subdomain: string) =>
-  request<AccessRule[]>(`/tunnels/${subdomain}/access`)
-
+export const getAccessRules = (subdomain: string) => request<AccessRule[]>(`/tunnels/${subdomain}/access`)
 export const addAccessRule = (subdomain: string, email: string, provider: string) =>
-  request<AccessRule>(`/tunnels/${subdomain}/access`, {
-    method: 'POST',
-    body: JSON.stringify({ email, provider }),
-  })
-
+  request<AccessRule>(`/tunnels/${subdomain}/access`, { method: 'POST', body: JSON.stringify({ email, provider }) })
 export const deleteAccessRule = (subdomain: string, ruleId: number) =>
   request<void>(`/tunnels/${subdomain}/access/${ruleId}`, { method: 'DELETE' })
 
+// PIN
+export const getPinStatus = (subdomain: string) => request<PinStatus>(`/tunnels/${subdomain}/pin`)
+export const setPin = (subdomain: string, pin: string) =>
+  request<void>(`/tunnels/${subdomain}/pin`, { method: 'PUT', body: JSON.stringify({ pin }) })
+export const removePin = (subdomain: string) => request<void>(`/tunnels/${subdomain}/pin`, { method: 'DELETE' })
+
+// Share links
+export const getShareLinks = (subdomain: string) => request<ShareLink[]>(`/tunnels/${subdomain}/share`)
+export const createShareLink = (subdomain: string, body: { duration: string; label: string; max_uses?: number }) =>
+  request<{ share_url: string; link: ShareLink }>(`/tunnels/${subdomain}/share`, { method: 'POST', body: JSON.stringify(body) })
+export const deleteShareLink = (subdomain: string, linkId: number) =>
+  request<void>(`/tunnels/${subdomain}/share/${linkId}`, { method: 'DELETE' })
+
 // Config
 export const getConfig = () => request<AddonConfig>('/config')
-
-export const updateConfig = (api_key: string, relay_host: string) =>
-  request<void>('/config', { method: 'POST', body: JSON.stringify({ api_key, relay_host }) })
+export const updateConfig = (api_key: string) =>
+  request<void>('/config', { method: 'POST', body: JSON.stringify({ api_key }) })

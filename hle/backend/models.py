@@ -12,13 +12,11 @@ class TunnelConfig(BaseModel):
     service_url: str
     label: str
     auth_mode: Literal["sso", "none"] = "sso"
-    relay_host: str = "hle.world"
+    subdomain: Optional[str] = None  # populated once tunnel connects to relay
 
 
 class TunnelStatus(TunnelConfig):
-    """TunnelConfig extended with live supervisord state."""
-
-    state: Literal["RUNNING", "STOPPED", "STARTING", "FATAL", "UNKNOWN"] = "UNKNOWN"
+    state: Literal["RUNNING", "STOPPED"] = "STOPPED"
     public_url: Optional[str] = None
     pid: Optional[int] = None
 
@@ -31,9 +29,18 @@ class AddTunnelRequest(BaseModel):
 
 class UpdateConfigRequest(BaseModel):
     api_key: str
-    relay_host: str = "hle.world"
 
 
 class AddAccessRuleRequest(BaseModel):
     email: str
     provider: Literal["any", "google", "github", "hle"] = "any"
+
+
+class SetPinRequest(BaseModel):
+    pin: str  # 4-8 digits
+
+
+class CreateShareLinkRequest(BaseModel):
+    duration: Literal["1h", "24h", "7d"] = "24h"
+    label: str = ""
+    max_uses: Optional[int] = None

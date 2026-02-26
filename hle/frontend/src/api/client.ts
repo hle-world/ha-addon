@@ -40,6 +40,11 @@ export interface AddonConfig {
   api_key_masked: string
 }
 
+export interface NetworkInfo {
+  addon_ip: string | null
+  trusted_subnet: string | null
+}
+
 const base = './api'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -89,3 +94,4 @@ export const deleteShareLink = (subdomain: string, linkId: number) =>
 export const getConfig = () => request<AddonConfig>('/config')
 export const updateConfig = (api_key: string) =>
   request<void>('/config', { method: 'POST', body: JSON.stringify({ api_key }) })
+export const getNetworkInfo = () => request<NetworkInfo>('/network-info')

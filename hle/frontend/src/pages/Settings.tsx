@@ -66,7 +66,10 @@ export function Settings() {
           placeholder="hle_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         />
         <span style={{ fontSize: 12, color: '#6b7280' }}>
-          Get your API key at{' '}
+          New user?{' '}
+          <a href="https://hle.world/register" target="_blank" rel="noreferrer"
+            style={{ color: '#60a5fa' }}>Create a free account</a>
+          {' '}· then find your key at{' '}
           <a href="https://hle.world/dashboard" target="_blank" rel="noreferrer"
             style={{ color: '#60a5fa' }}>hle.world/dashboard</a>
         </span>

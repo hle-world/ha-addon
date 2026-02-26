@@ -49,8 +49,13 @@ export function Dashboard() {
       </div>
 
       {noKey && (
-        <div style={{ background: '#422006', border: '1px solid #92400e', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#fbbf24' }}>
-          No API key configured. Go to <strong>Settings</strong> to add your key before creating tunnels.
+        <div style={{ background: '#422006', border: '1px solid #92400e', borderRadius: 8, padding: '12px 16px', fontSize: 13, color: '#fbbf24', lineHeight: 1.6 }}>
+          No API key configured.{' '}
+          <a href="https://hle.world/register" target="_blank" rel="noreferrer"
+            style={{ color: '#fbbf24', fontWeight: 600, textDecoration: 'underline' }}>
+            Create your free account
+          </a>{' '}
+          to get an API key, then go to <strong>Settings</strong> to enter it.
         </div>
       )}
 

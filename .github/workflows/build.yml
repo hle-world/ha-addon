@@ -3,15 +3,6 @@ name: Build & Publish Add-on
 on:
   release:
     types: [published]
-  push:
-    branches: [main]
-    paths:
-      - 'hle/**'
-      - '.github/workflows/build.yml'
-  pull_request:
-    paths:
-      - 'hle/**'
-      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 env:

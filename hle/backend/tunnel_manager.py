@@ -94,11 +94,18 @@ async def _detect_subdomain(cfg_id: str, service_url: str, label: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def restore_all() -> None:
+    """Start all saved tunnels. Skips silently if no API key is configured —
+    tunnels will start automatically once the key is saved via the Settings UI."""
+    if not os.environ.get("HLE_API_KEY"):
+        print("[hle] No API key configured — tunnels will start once a key is set.")
+        return
     for cfg in _load_all().values():
+        if _is_running(_processes.get(cfg.id)):
+            continue  # already running (e.g. called again after key is set)
         try:
             proc = await _spawn(cfg)
             _processes[cfg.id] = proc
-            # Subdomain from disk is stale — re-confirm in background
+            _user_stopped.discard(cfg.id)
             asyncio.create_task(_detect_subdomain(cfg.id, cfg.service_url, cfg.label))
         except Exception as exc:
             print(f"[hle] Failed to restore tunnel {cfg.id}: {exc}")

@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles  # noqa: F401 — used in conditiona
 from backend import hle_api
 from backend.models import (
     AddAccessRuleRequest, AddTunnelRequest, CreateShareLinkRequest,
-    SetPinRequest, TunnelStatus, UpdateConfigRequest,
+    SetPinRequest, TunnelStatus, UpdateConfigRequest, UpdateTunnelRequest,
 )
 from backend import tunnel_manager as tm
 
@@ -59,6 +59,14 @@ async def list_tunnels():
 async def add_tunnel(req: AddTunnelRequest):
     _require_api_key()
     cfg = await tm.add_tunnel(req)
+    return tm.get_tunnel(cfg.id)
+
+
+@app.patch("/api/tunnels/{tunnel_id}", response_model=TunnelStatus)
+async def update_tunnel(tunnel_id: str, req: UpdateTunnelRequest):
+    if tm.get_tunnel(tunnel_id) is None:
+        raise HTTPException(status_code=404, detail="Tunnel not found")
+    cfg = await tm.update_tunnel(tunnel_id, req)
     return tm.get_tunnel(cfg.id)
 
 

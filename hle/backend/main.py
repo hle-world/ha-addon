@@ -237,9 +237,35 @@ async def ha_setup_apply():
         if subnet in text:
             return {"status": "already_configured", "subnet": subnet}
         # http block exists with use_x_forwarded_for but our subnet is missing —
-        # append just the subnet entry under the existing trusted_proxies list.
-        new_text = text.rstrip() + f"\n    - {subnet}  # Added by HLE addon\n"
-        HA_CONFIG.write_text(new_text)
+        # insert the subnet after the last entry under trusted_proxies.
+        lines = text.splitlines(keepends=True)
+        tp_idx = next(
+            (i for i, l in enumerate(lines) if re.match(r"[ \t]*trusted_proxies\s*:", l)),
+            None,
+        )
+        if tp_idx is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Could not locate trusted_proxies key in configuration.yaml. Please add the subnet manually.",
+            )
+        # Detect indentation from the first existing list entry under trusted_proxies.
+        entry_indent = "    "
+        for i in range(tp_idx + 1, min(tp_idx + 10, len(lines))):
+            m = re.match(r"([ \t]*)-\s+", lines[i])
+            if m:
+                entry_indent = m.group(1)
+                break
+        # Find the last list entry that belongs to this trusted_proxies block.
+        last_entry_idx = tp_idx
+        for i in range(tp_idx + 1, len(lines)):
+            stripped = lines[i].strip()
+            if re.match(r"-\s+", stripped):
+                last_entry_idx = i
+            elif stripped and not stripped.startswith("#"):
+                break  # reached the next YAML key — stop
+        new_line = f"{entry_indent}- {subnet}  # Added by HLE addon\n"
+        lines.insert(last_entry_idx + 1, new_line)
+        HA_CONFIG.write_text("".join(lines))
         return {"status": "applied", "subnet": subnet}
 
     if re.search(r"^http:", text, re.MULTILINE):

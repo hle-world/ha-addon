@@ -3,7 +3,7 @@ import type { TunnelStatus, HaSetupStatus, HaSetupApplyResult } from './api/clie
 import {
   getConfig, updateConfig,
   getTunnels,
-  getHaSetupStatus, applyHaSetup, restartHaCore,
+  getHaSetupStatus, applyHaSetup, restartHaCore, pingHa,
 } from './api/client'
 import { TunnelCard } from './components/TunnelCard'
 import { AddTunnelModal } from './components/AddTunnelModal'
@@ -85,13 +85,50 @@ function Section({
 // ---------------------------------------------------------------------------
 // Restart banner
 // ---------------------------------------------------------------------------
-function RestartBanner({ onRestart }: { onRestart: () => void }) {
+function RestartBanner({ onRestart, onDismiss }: { onRestart: () => void; onDismiss: () => void }) {
   const [confirming, setConfirming] = useState(false)
-  const [restarting, setRestarting] = useState(false)
+  const [phase, setPhase] = useState<'idle' | 'waiting_down' | 'waiting_up'>('idle')
+
+  useEffect(() => {
+    if (phase === 'idle') return
+    // Poll HA ping to detect down → up transition
+    let wentDown = phase === 'waiting_down' ? false : true
+    const id = setInterval(async () => {
+      try {
+        const { alive } = await pingHa()
+        if (!wentDown && !alive) wentDown = true
+        if (wentDown && alive) {
+          clearInterval(id)
+          onDismiss()
+        }
+      } catch { /* addon itself unreachable — ignore */ }
+    }, 2000)
+    return () => clearInterval(id)
+  }, [phase, onDismiss])
 
   async function handleRestart() {
-    setRestarting(true)
-    try { await Promise.resolve(onRestart()) } catch { setRestarting(false) }
+    setPhase('waiting_down')
+    try { await Promise.resolve(onRestart()) } catch { setPhase('idle') }
+  }
+
+  if (phase !== 'idle') {
+    return (
+      <div style={{
+        background: '#1c1a07', border: `1px solid #713f12`,
+        borderRadius: 10, padding: '14px 18px',
+        display: 'flex', alignItems: 'center', gap: 10,
+      }}>
+        <span style={{ fontSize: 18 }}>⏳</span>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: colors.amber }}>
+            {phase === 'waiting_down' ? 'Waiting for HA to go down…' : 'HA is restarting, waiting for it to come back up…'}
+          </div>
+          <div style={{ fontSize: 13, color: '#d97706', marginTop: 2 }}>
+            This will clear automatically once HA is back online.
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -120,16 +157,11 @@ function RestartBanner({ onRestart }: { onRestart: () => void }) {
         ) : (
           <>
             <span style={{ fontSize: 13, color: colors.amber, alignSelf: 'center' }}>Are you sure?</span>
-            <button
-              style={{ ...btnDanger, opacity: restarting ? 0.6 : 1 }}
-              onClick={handleRestart}
-              disabled={restarting}
-            >
-              {restarting ? 'Restarting…' : 'Yes, restart'}
-            </button>
+            <button style={btnDanger} onClick={handleRestart}>Yes, restart</button>
             <button style={btnGhost} onClick={() => setConfirming(false)}>Cancel</button>
           </>
         )}
+        <button style={btnGhost} onClick={onDismiss} title="Dismiss — I'll restart manually">✕</button>
       </div>
     </div>
   )
@@ -460,11 +492,16 @@ export default function App() {
     localStorage.setItem('hle_restart_needed', '1')
   }
 
-  async function handleRestart() {
-    await restartHaCore()
-    // HA is restarting — clear the banner. Page will be unreachable briefly.
+  function dismissRestartBanner() {
     setRestartNeeded(false)
     localStorage.removeItem('hle_restart_needed')
+  }
+
+  async function handleRestart() {
+    // Clear localStorage BEFORE calling restart — if the page reloads
+    // mid-request (HA goes down fast), we don't want the banner reappearing.
+    dismissRestartBanner()
+    await restartHaCore()
   }
 
   const noKey = apiKeySet === false
@@ -486,7 +523,7 @@ export default function App() {
       <main style={{ padding: '20px 24px', maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
         {/* Restart banner */}
-        {restartNeeded && <RestartBanner onRestart={handleRestart} />}
+        {restartNeeded && <RestartBanner onRestart={handleRestart} onDismiss={dismissRestartBanner} />}
 
         {/* Settings section */}
         <Section

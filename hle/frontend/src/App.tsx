@@ -422,7 +422,9 @@ export default function App() {
   const [loadError, setLoadError] = useState('')
 
   const [haStatus, setHaStatus] = useState<HaSetupStatus | null>(null)
-  const [restartNeeded, setRestartNeeded] = useState(false)
+  const [restartNeeded, setRestartNeeded] = useState(
+    () => localStorage.getItem('hle_restart_needed') === '1'
+  )
 
   // Load config to determine if key is set
   useEffect(() => {
@@ -455,12 +457,14 @@ export default function App() {
   function handleHaApplied() {
     setHaStatus({ status: 'configured' })
     setRestartNeeded(true)
+    localStorage.setItem('hle_restart_needed', '1')
   }
 
   async function handleRestart() {
     await restartHaCore()
     // HA is restarting — clear the banner. Page will be unreachable briefly.
     setRestartNeeded(false)
+    localStorage.removeItem('hle_restart_needed')
   }
 
   const noKey = apiKeySet === false

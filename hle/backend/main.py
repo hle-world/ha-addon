@@ -31,10 +31,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=lifespan)
 
-HLE_CONFIG = Path("/data/hle_config.json")  # our own file, not managed by HA Supervisor
-HA_CONFIG  = Path("/config/configuration.yaml")
-STATIC_DIR = Path("/app/backend/static")
-SUPERVISOR_API = "http://supervisor"
+HLE_CONFIG      = Path("/data/hle_config.json")  # our own file, not managed by HA Supervisor
+HA_CONFIG       = Path("/config/configuration.yaml")
+RESTART_PENDING = Path("/data/restart_pending")   # sentinel: written on config apply, deleted when HA comes back up
+STATIC_DIR      = Path("/app/backend/static")
+SUPERVISOR_API  = "http://supervisor"
+HA_HOST         = "homeassistant.local.hass.io"
+HA_PORT         = 8123
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +269,7 @@ async def ha_setup_apply():
         new_line = f"{entry_indent}- {subnet}  # Added by HLE addon\n"
         lines.insert(last_entry_idx + 1, new_line)
         HA_CONFIG.write_text("".join(lines))
+        RESTART_PENDING.write_text("1")
         return {"status": "applied", "subnet": subnet}
 
     if re.search(r"^http:", text, re.MULTILINE):
@@ -286,6 +290,7 @@ async def ha_setup_apply():
         f"    - {subnet}\n"
     )
     HA_CONFIG.write_text(text + block)
+    RESTART_PENDING.write_text("1")
     return {"status": "applied", "subnet": subnet}
 
 
@@ -305,7 +310,22 @@ async def ha_setup_restart():
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
     except httpx.RequestError as exc:
         raise HTTPException(status_code=503, detail=f"Supervisor unreachable: {exc}")
+    # Clear the sentinel immediately — even if the page reloads before the
+    # response arrives, the backend has already recorded the restart intent.
+    RESTART_PENDING.unlink(missing_ok=True)
     return {"status": "restarting"}
+
+
+@app.get("/api/ha-ping")
+async def ha_ping():
+    """Check whether HA Core is reachable. Used by the frontend to detect
+    when HA comes back up after a restart so the banner can be cleared."""
+    try:
+        with socket.create_connection((HA_HOST, HA_PORT), timeout=2):
+            pass
+        return {"alive": True}
+    except Exception:
+        return {"alive": False}
 
 
 @app.get("/api/network-info")

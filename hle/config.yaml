@@ -21,6 +21,7 @@ panel_title: HLE
 map:
   - data
   - config:rw
-  - config:rw
+
+hassio_api: true
 
 image: "ghcr.io/hle-world/ha-addon"

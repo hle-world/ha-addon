@@ -49,6 +49,22 @@ async def remove_pin(subdomain: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Basic auth
+# ---------------------------------------------------------------------------
+
+async def get_basic_auth_status(subdomain: str) -> dict:
+    return await _client().get_tunnel_basic_auth_status(subdomain)
+
+
+async def set_basic_auth(subdomain: str, username: str, password: str) -> dict:
+    return await _client().set_tunnel_basic_auth(subdomain, username, password)
+
+
+async def remove_basic_auth(subdomain: str) -> dict:
+    return await _client().remove_tunnel_basic_auth(subdomain)
+
+
+# ---------------------------------------------------------------------------
 # Share links
 # ---------------------------------------------------------------------------
 

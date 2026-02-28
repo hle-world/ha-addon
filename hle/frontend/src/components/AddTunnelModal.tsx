@@ -35,6 +35,7 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
   const [verifySsl, setVerifySsl] = useState(false)
   const [websocket, setWebsocket] = useState(true)
   const [apiKeyOverride, setApiKeyOverride] = useState('')
+  const [upstreamBasicAuth, setUpstreamBasicAuth] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -50,6 +51,7 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
         verify_ssl: verifySsl,
         websocket_enabled: websocket,
         api_key: apiKeyOverride || undefined,
+        upstream_basic_auth: upstreamBasicAuth || undefined,
       })
       onAdded()
     } catch (e) {
@@ -128,6 +130,15 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
               <input style={{ ...inputStyle, fontSize: 13 }} value={apiKeyOverride}
                 onChange={e => setApiKeyOverride(e.target.value)}
                 placeholder="hle_..." type="password" />
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={{ ...labelStyle, fontSize: 12 }}>
+                Upstream basic auth <span style={{ color: '#6b7280', fontWeight: 400 }}>(optional — user:pass injected into forwarded requests)</span>
+              </label>
+              <input style={{ ...inputStyle, fontSize: 13 }} value={upstreamBasicAuth}
+                onChange={e => setUpstreamBasicAuth(e.target.value)}
+                placeholder="username:password" type="password" />
             </div>
           </div>
         )}

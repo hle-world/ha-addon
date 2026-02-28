@@ -7,6 +7,7 @@ export interface TunnelStatus {
   verify_ssl: boolean
   websocket_enabled: boolean
   api_key: string | null
+  upstream_basic_auth: string | null
   subdomain: string | null
   state: 'CONNECTED' | 'CONNECTING' | 'STOPPED' | 'FAILED'
   error: string | null
@@ -22,6 +23,7 @@ export interface UpdateTunnelRequest {
   verify_ssl?: boolean
   websocket_enabled?: boolean
   api_key?: string | null
+  upstream_basic_auth?: string | null
 }
 
 export interface AccessRule {
@@ -33,6 +35,12 @@ export interface AccessRule {
 
 export interface PinStatus {
   has_pin: boolean
+  updated_at: string | null
+}
+
+export interface BasicAuthStatus {
+  has_basic_auth: boolean
+  username: string | null
   updated_at: string | null
 }
 
@@ -85,7 +93,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // Tunnels
 export const getTunnels = () => request<TunnelStatus[]>('/tunnels')
-export const addTunnel = (body: { service_url: string; label: string; name?: string; auth_mode: string; verify_ssl?: boolean; websocket_enabled?: boolean; api_key?: string }) =>
+export const addTunnel = (body: { service_url: string; label: string; name?: string; auth_mode: string; verify_ssl?: boolean; websocket_enabled?: boolean; api_key?: string; upstream_basic_auth?: string }) =>
   request<TunnelStatus>('/tunnels', { method: 'POST', body: JSON.stringify(body) })
 export const updateTunnel = (id: string, body: UpdateTunnelRequest) =>
   request<TunnelStatus>(`/tunnels/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
@@ -107,6 +115,12 @@ export const getPinStatus = (subdomain: string) => request<PinStatus>(`/tunnels/
 export const setPin = (subdomain: string, pin: string) =>
   request<void>(`/tunnels/${subdomain}/pin`, { method: 'PUT', body: JSON.stringify({ pin }) })
 export const removePin = (subdomain: string) => request<void>(`/tunnels/${subdomain}/pin`, { method: 'DELETE' })
+
+// Basic auth
+export const getBasicAuthStatus = (subdomain: string) => request<BasicAuthStatus>(`/tunnels/${subdomain}/basic-auth`)
+export const setBasicAuth = (subdomain: string, username: string, password: string) =>
+  request<void>(`/tunnels/${subdomain}/basic-auth`, { method: 'PUT', body: JSON.stringify({ username, password }) })
+export const removeBasicAuth = (subdomain: string) => request<void>(`/tunnels/${subdomain}/basic-auth`, { method: 'DELETE' })
 
 // Share links
 export const getShareLinks = (subdomain: string) => request<ShareLink[]>(`/tunnels/${subdomain}/share`)

@@ -53,6 +53,8 @@ async def _spawn(cfg: TunnelConfig) -> asyncio.subprocess.Process:
         cmd.append("--verify-ssl")
     if not cfg.websocket_enabled:
         cmd.append("--no-websocket")
+    if cfg.upstream_basic_auth:
+        cmd.extend(["--upstream-basic-auth", cfg.upstream_basic_auth])
     env = {**os.environ}
     if cfg.api_key:
         env["HLE_API_KEY"] = cfg.api_key  # per-tunnel override; not visible in `ps`
@@ -144,6 +146,7 @@ async def add_tunnel(req: AddTunnelRequest) -> TunnelConfig:
         verify_ssl=req.verify_ssl,
         websocket_enabled=req.websocket_enabled,
         api_key=req.api_key or None,
+        upstream_basic_auth=req.upstream_basic_auth or None,
     )
     proc = await _spawn(cfg)
     _processes[cfg.id] = proc
@@ -165,6 +168,8 @@ async def update_tunnel(tunnel_id: str, req: UpdateTunnelRequest) -> TunnelConfi
     # Empty string for api_key means "clear the override"
     if "api_key" in req.model_fields_set:
         changed["api_key"] = req.api_key or None
+    if "upstream_basic_auth" in req.model_fields_set:
+        changed["upstream_basic_auth"] = req.upstream_basic_auth or None
 
     # Track if label/service changed so we clear the stale subdomain
     label_or_url_changed = (

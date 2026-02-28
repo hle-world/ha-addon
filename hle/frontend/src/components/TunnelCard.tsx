@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import type { TunnelStatus, AccessRule, ShareLink } from '../api/client'
+import type { TunnelStatus, AccessRule, ShareLink, BasicAuthStatus } from '../api/client'
 import {
   startTunnel, stopTunnel, removeTunnel, updateTunnel,
   getAccessRules, addAccessRule, deleteAccessRule,
   getPinStatus, setPin, removePin,
+  getBasicAuthStatus, setBasicAuth, removeBasicAuth,
   getShareLinks, createShareLink, deleteShareLink,
   getTunnelLogs,
 } from '../api/client'
@@ -33,7 +34,7 @@ const inputSm: React.CSSProperties = {
   background: '#111318', color: '#e0e0e0', fontSize: 13,
 }
 
-type Panel = 'access' | 'pin' | 'share' | 'logs' | 'edit' | null
+type Panel = 'access' | 'pin' | 'basic-auth' | 'share' | 'logs' | 'edit' | null
 
 export function TunnelCard({ tunnel, onRefresh }: Props) {
   const [panel, setPanel] = useState<Panel>(null)
@@ -47,6 +48,11 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
   // PIN state
   const [hasPin, setHasPin] = useState<boolean | null>(null)
   const [newPin, setNewPin] = useState('')
+
+  // Basic auth state
+  const [basicAuth, setBasicAuthState] = useState<BasicAuthStatus | null>(null)
+  const [baUsername, setBaUsername] = useState('')
+  const [baPassword, setBaPassword] = useState('')
 
   // Share links state
   const [shareLinks, setShareLinks] = useState<ShareLink[] | null>(null)
@@ -65,6 +71,7 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
   const [editVerifySsl, setEditVerifySsl] = useState(tunnel.verify_ssl)
   const [editWebsocket, setEditWebsocket] = useState(tunnel.websocket_enabled)
   const [editApiKey, setEditApiKey] = useState(tunnel.api_key ?? '')
+  const [editUpstreamBasicAuth, setEditUpstreamBasicAuth] = useState(tunnel.upstream_basic_auth ?? '')
   const [editSaving, setEditSaving] = useState(false)
 
   const sub = tunnel.subdomain
@@ -82,11 +89,13 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
       setEditVerifySsl(tunnel.verify_ssl)
       setEditWebsocket(tunnel.websocket_enabled)
       setEditApiKey(tunnel.api_key ?? '')
+      setEditUpstreamBasicAuth(tunnel.upstream_basic_auth ?? '')
     }
     setPanel(p)
     if (!sub) return
     try {
       if (p === 'access' && rules === null) setRules(await getAccessRules(sub))
+      if (p === 'basic-auth' && basicAuth === null) setBasicAuthState(await getBasicAuthStatus(sub))
       if (p === 'pin' && hasPin === null) {
         const s = await getPinStatus(sub)
         setHasPin(s.has_pin)
@@ -108,6 +117,7 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
         verify_ssl: editVerifySsl,
         websocket_enabled: editWebsocket,
         api_key: editApiKey || null,
+        upstream_basic_auth: editUpstreamBasicAuth || null,
       })
       setPanel(null)
       onRefresh()
@@ -146,6 +156,22 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
     if (!sub) return
     await removePin(sub)
     setHasPin(false)
+  }
+
+  async function handleSetBasicAuth() {
+    if (!sub || !baUsername || !baPassword) return
+    try {
+      await setBasicAuth(sub, baUsername, baPassword)
+      setBasicAuthState(await getBasicAuthStatus(sub))
+      setBaUsername('')
+      setBaPassword('')
+    } catch (e) { setError(String(e)) }
+  }
+
+  async function handleRemoveBasicAuth() {
+    if (!sub) return
+    await removeBasicAuth(sub)
+    setBasicAuthState({ has_basic_auth: false, username: null, updated_at: null })
   }
 
   async function handleCreateShare() {
@@ -227,6 +253,11 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
           </button>
         )}
         {sub && (
+          <button style={btn(panel === 'basic-auth' ? 'active' : 'ghost')} onClick={() => togglePanel('basic-auth')}>
+            Basic Auth
+          </button>
+        )}
+        {sub && (
           <button style={btn(panel === 'share' ? 'active' : 'ghost')} onClick={() => togglePanel('share')}>
             Share
           </button>
@@ -278,6 +309,16 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
             <input style={{ ...inputSm, fontFamily: 'monospace' }} value={editApiKey}
               onChange={e => setEditApiKey(e.target.value)}
               placeholder="hle_... (optional)" type="password" />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 12, color: '#9ca3af' }}>
+              Upstream basic auth{' '}
+              <span style={{ color: '#6b7280', fontWeight: 400 }}>(user:pass — injected into requests forwarded to the local service)</span>
+            </label>
+            <input style={{ ...inputSm, fontFamily: 'monospace' }} value={editUpstreamBasicAuth}
+              onChange={e => setEditUpstreamBasicAuth(e.target.value)}
+              placeholder="username:password (optional)" type="password" />
           </div>
 
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -357,6 +398,38 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
                   {hasPin ? 'Update PIN' : 'Set PIN'}
                 </button>
                 {hasPin && <button style={btn('danger')} onClick={handleRemovePin}>Remove PIN</button>}
+              </div>
+            </>
+          }
+        </div>
+      )}
+
+      {/* Basic Auth panel */}
+      {panel === 'basic-auth' && (
+        <div style={section}>
+          <span style={sectionTitle}>Basic Auth</span>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>
+            Require HTTP Basic Auth credentials to access this tunnel URL.
+          </span>
+          {!sub
+            ? <span style={{ color: '#6b7280', fontSize: 13 }}>Tunnel not yet connected — subdomain unknown.</span>
+            : <>
+              <span style={{ fontSize: 13, color: basicAuth?.has_basic_auth ? '#4ade80' : '#6b7280' }}>
+                {basicAuth?.has_basic_auth
+                  ? `Enabled (user: ${basicAuth.username})`
+                  : 'Not configured'}
+              </span>
+              <div style={row}>
+                <input value={baUsername} onChange={e => setBaUsername(e.target.value)}
+                  placeholder="username" style={{ ...inputSm, width: 140 }} />
+                <input value={baPassword} onChange={e => setBaPassword(e.target.value)}
+                  placeholder="password" type="password" style={{ ...inputSm, width: 140 }} />
+                <button style={btn('primary')} onClick={handleSetBasicAuth} disabled={!baUsername || !baPassword}>
+                  {basicAuth?.has_basic_auth ? 'Update' : 'Set'}
+                </button>
+                {basicAuth?.has_basic_auth && (
+                  <button style={btn('danger')} onClick={handleRemoveBasicAuth}>Remove</button>
+                )}
               </div>
             </>
           }

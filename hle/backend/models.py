@@ -16,6 +16,7 @@ class TunnelConfig(BaseModel):
     verify_ssl: bool = False
     websocket_enabled: bool = True
     api_key: Optional[str] = None       # per-tunnel key override; falls back to global
+    upstream_basic_auth: Optional[str] = None   # "user:pass" injected into upstream requests
     subdomain: Optional[str] = None     # populated once tunnel connects to relay
 
 
@@ -34,6 +35,7 @@ class AddTunnelRequest(BaseModel):
     verify_ssl: bool = False
     websocket_enabled: bool = True
     api_key: Optional[str] = None
+    upstream_basic_auth: Optional[str] = None
 
 
 class UpdateTunnelRequest(BaseModel):
@@ -44,6 +46,7 @@ class UpdateTunnelRequest(BaseModel):
     verify_ssl: Optional[bool] = None
     websocket_enabled: Optional[bool] = None
     api_key: Optional[str] = None       # set to "" to clear the override
+    upstream_basic_auth: Optional[str] = None   # set to "" to clear
 
 
 class UpdateConfigRequest(BaseModel):
@@ -57,6 +60,11 @@ class AddAccessRuleRequest(BaseModel):
 
 class SetPinRequest(BaseModel):
     pin: str  # 4-8 digits
+
+
+class SetBasicAuthRequest(BaseModel):
+    username: str
+    password: str
 
 
 class CreateShareLinkRequest(BaseModel):

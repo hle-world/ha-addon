@@ -17,7 +17,8 @@ from fastapi.staticfiles import StaticFiles  # noqa: F401 — used in conditiona
 from backend import hle_api
 from backend.models import (
     AddAccessRuleRequest, AddTunnelRequest, CreateShareLinkRequest,
-    SetPinRequest, TunnelStatus, UpdateConfigRequest, UpdateTunnelRequest,
+    SetBasicAuthRequest, SetPinRequest, TunnelStatus, UpdateConfigRequest,
+    UpdateTunnelRequest,
 )
 from backend import tunnel_manager as tm
 
@@ -160,6 +161,34 @@ async def set_pin(subdomain: str, req: SetPinRequest):
 async def remove_pin(subdomain: str):
     try:
         await hle_api.remove_pin(subdomain)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+
+
+# ---------------------------------------------------------------------------
+# Basic auth (keyed by subdomain)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tunnels/{subdomain}/basic-auth")
+async def get_basic_auth_status(subdomain: str):
+    try:
+        return await hle_api.get_basic_auth_status(subdomain)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+
+
+@app.put("/api/tunnels/{subdomain}/basic-auth", status_code=204)
+async def set_basic_auth(subdomain: str, req: SetBasicAuthRequest):
+    try:
+        await hle_api.set_basic_auth(subdomain, req.username, req.password)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+
+
+@app.delete("/api/tunnels/{subdomain}/basic-auth", status_code=204)
+async def remove_basic_auth(subdomain: str):
+    try:
+        await hle_api.remove_basic_auth(subdomain)
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
 

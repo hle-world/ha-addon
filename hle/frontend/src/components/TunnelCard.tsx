@@ -33,6 +33,17 @@ const inputSm: React.CSSProperties = {
   padding: '5px 10px', borderRadius: 6, border: '1px solid #2d3139',
   background: '#111318', color: '#e0e0e0', fontSize: 13,
 }
+const inputErr: React.CSSProperties = {
+  ...inputSm, borderColor: '#ef4444',
+}
+const warningBox: React.CSSProperties = {
+  background: '#422006', border: '1px solid #92400e', borderRadius: 6,
+  padding: '8px 12px', fontSize: 13, color: '#fbbf24',
+}
+const confirmBox: React.CSSProperties = {
+  background: '#1c1917', border: '1px solid #44403c', borderRadius: 6,
+  padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8,
+}
 
 type Panel = 'access' | 'pin' | 'basic-auth' | 'share' | 'logs' | 'edit' | null
 
@@ -48,11 +59,19 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
   // PIN state
   const [hasPin, setHasPin] = useState<boolean | null>(null)
   const [newPin, setNewPin] = useState('')
+  const [confirmPin, setConfirmPin] = useState('')
 
   // Basic auth state
   const [basicAuth, setBasicAuthState] = useState<BasicAuthStatus | null>(null)
   const [baUsername, setBaUsername] = useState('')
   const [baPassword, setBaPassword] = useState('')
+  const [baConfirmPassword, setBaConfirmPassword] = useState('')
+
+  // Conflict warning acknowledgement (reset when panel changes)
+  const [conflictAcked, setConflictAcked] = useState(false)
+
+  // Confirmation dialog for destructive actions
+  const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null)
 
   // Share links state
   const [shareLinks, setShareLinks] = useState<ShareLink[] | null>(null)
@@ -79,8 +98,10 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
   async function togglePanel(p: Panel) {
     setError('')
     setNewShareUrl(null)
+    setConflictAcked(false)
+    setConfirmAction(null)
     if (panel === p) { setPanel(null); return }
-    // Reset edit form to current values when opening
+    // Reset form fields when opening panels
     if (p === 'edit') {
       setEditServiceUrl(tunnel.service_url)
       setEditLabel(tunnel.label)
@@ -91,14 +112,38 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
       setEditApiKey(tunnel.api_key ?? '')
       setEditUpstreamBasicAuth(tunnel.upstream_basic_auth ?? '')
     }
+    if (p === 'pin') { setNewPin(''); setConfirmPin('') }
+    if (p === 'basic-auth') { setBaUsername(''); setBaPassword(''); setBaConfirmPassword('') }
+    if (p === 'access') { setNewEmail(''); setNewProvider('any') }
     setPanel(p)
     if (!sub) return
     try {
-      if (p === 'access' && rules === null) setRules(await getAccessRules(sub))
-      if (p === 'basic-auth' && basicAuth === null) setBasicAuthState(await getBasicAuthStatus(sub))
-      if (p === 'pin' && hasPin === null) {
-        const s = await getPinStatus(sub)
-        setHasPin(s.has_pin)
+      // Fetch panel data + cross-panel state needed for conflict warnings
+      if (p === 'access') {
+        const [rulesRes, baRes] = await Promise.all([
+          rules === null ? getAccessRules(sub) : Promise.resolve(rules),
+          basicAuth === null ? getBasicAuthStatus(sub).catch(() => null) : Promise.resolve(basicAuth),
+        ])
+        if (rules === null) setRules(rulesRes)
+        if (baRes) setBasicAuthState(baRes)
+      }
+      if (p === 'pin') {
+        const [pinRes, baRes] = await Promise.all([
+          hasPin === null ? getPinStatus(sub) : Promise.resolve(null),
+          basicAuth === null ? getBasicAuthStatus(sub).catch(() => null) : Promise.resolve(basicAuth),
+        ])
+        if (pinRes) setHasPin(pinRes.has_pin)
+        if (baRes) setBasicAuthState(baRes)
+      }
+      if (p === 'basic-auth') {
+        const [baRes, pinRes, rulesRes] = await Promise.all([
+          basicAuth === null ? getBasicAuthStatus(sub) : Promise.resolve(basicAuth),
+          hasPin === null ? getPinStatus(sub).catch(() => null) : Promise.resolve(null),
+          rules === null ? getAccessRules(sub).catch(() => null) : Promise.resolve(rules),
+        ])
+        if (basicAuth === null) setBasicAuthState(baRes)
+        if (pinRes) setHasPin(pinRes.has_pin)
+        if (rulesRes && rules === null) setRules(rulesRes)
       }
       if (p === 'share' && shareLinks === null) setShareLinks(await getShareLinks(sub))
       if (p === 'logs') setLogs((await getTunnelLogs(tunnel.id)).lines)
@@ -128,6 +173,8 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
     }
   }
 
+  // --- Access rules handlers ---
+
   async function handleAddRule() {
     if (!sub || !newEmail) return
     try {
@@ -137,41 +184,79 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
     } catch (e) { setError(String(e)) }
   }
 
-  async function handleDeleteRule(id: number) {
-    if (!sub) return
-    await deleteAccessRule(sub, id)
-    setRules(prev => (prev ?? []).filter(r => r.id !== id))
+  function handleDeleteRule(id: number) {
+    setConfirmAction({
+      message: 'Remove this email from the allow-list?',
+      onConfirm: async () => {
+        if (!sub) return
+        await deleteAccessRule(sub, id)
+        setRules(prev => (prev ?? []).filter(r => r.id !== id))
+        setConfirmAction(null)
+      },
+    })
   }
 
+  // --- PIN handlers ---
+
+  // PIN validation
+  const pinValid = /^\d{4,8}$/.test(newPin)
+  const pinMatch = newPin === confirmPin
+  const pinTouched = newPin.length > 0
+  const confirmPinTouched = confirmPin.length > 0
+
   async function handleSetPin() {
-    if (!sub || !newPin) return
+    if (!sub || !pinValid || !pinMatch) return
     try {
       await setPin(sub, newPin)
       setHasPin(true)
       setNewPin('')
+      setConfirmPin('')
     } catch (e) { setError(String(e)) }
   }
 
-  async function handleRemovePin() {
-    if (!sub) return
-    await removePin(sub)
-    setHasPin(false)
+  function handleRemovePin() {
+    setConfirmAction({
+      message: 'Remove PIN from this tunnel?',
+      onConfirm: async () => {
+        if (!sub) return
+        await removePin(sub)
+        setHasPin(false)
+        setConfirmAction(null)
+      },
+    })
   }
 
+  // --- Basic auth handlers ---
+
+  // Basic auth validation
+  const baUsernameValid = baUsername.length > 0 && !baUsername.includes(':')
+  const baPasswordValid = baPassword.length >= 8
+  const baPasswordMatch = baPassword === baConfirmPassword
+  const baUsernameTouched = baUsername.length > 0
+  const baPasswordTouched = baPassword.length > 0
+  const baConfirmTouched = baConfirmPassword.length > 0
+
   async function handleSetBasicAuth() {
-    if (!sub || !baUsername || !baPassword) return
+    if (!sub || !baUsernameValid || !baPasswordValid || !baPasswordMatch) return
     try {
       await setBasicAuth(sub, baUsername, baPassword)
       setBasicAuthState(await getBasicAuthStatus(sub))
       setBaUsername('')
       setBaPassword('')
+      setBaConfirmPassword('')
     } catch (e) { setError(String(e)) }
   }
 
-  async function handleRemoveBasicAuth() {
-    if (!sub) return
-    await removeBasicAuth(sub)
-    setBasicAuthState({ has_basic_auth: false, username: null, updated_at: null })
+  function handleRemoveBasicAuth() {
+    setConfirmAction({
+      message: 'Remove Basic Auth from this tunnel?',
+      onConfirm: async () => {
+        if (!sub) return
+        await removeBasicAuth(sub)
+        setBasicAuthState({ has_basic_auth: false, username: null, updated_at: null })
+        setConfirmAction(null)
+      },
+    })
   }
 
   async function handleCreateShare() {
@@ -191,8 +276,27 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
 
   const isSso = tunnel.auth_mode === 'sso'
 
+  // Conflict detection helpers
+  const pinHasBasicAuthConflict = basicAuth?.has_basic_auth === true
+  const accessHasBasicAuthConflict = basicAuth?.has_basic_auth === true
+  const baConflicts: string[] = []
+  if (hasPin) baConflicts.push('an active PIN')
+  if ((rules ?? []).length > 0) baConflicts.push(`${(rules ?? []).length} email rule${(rules ?? []).length > 1 ? 's' : ''}`)
+  const baHasConflict = baConflicts.length > 0 && !basicAuth?.has_basic_auth
+
   return (
     <div style={card}>
+      {/* Confirmation dialog overlay */}
+      {confirmAction && (
+        <div style={confirmBox}>
+          <span style={{ fontSize: 13, color: '#e0e0e0' }}>{confirmAction.message}</span>
+          <div style={row}>
+            <button style={btn('danger')} onClick={confirmAction.onConfirm}>Confirm</button>
+            <button style={btn('ghost')} onClick={() => setConfirmAction(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -356,26 +460,37 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
           {!sub
             ? <span style={{ color: '#6b7280', fontSize: 13 }}>Tunnel not yet connected — subdomain unknown.</span>
             : <>
-              {(rules ?? []).length === 0 && (
-                <span style={{ color: '#6b7280', fontSize: 13 }}>No rules — all SSO users are allowed.</span>
-              )}
-              {(rules ?? []).map(r => (
-                <div key={r.id} style={{ ...row, justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 13 }}>
-                    {r.allowed_email}
-                    <span style={{ color: '#6b7280', marginLeft: 6 }}>via {r.provider}</span>
-                  </span>
-                  <button style={{ ...btn('danger'), padding: '2px 8px' }} onClick={() => handleDeleteRule(r.id)}>✕</button>
+              {/* Conflict warning: Basic Auth active */}
+              {accessHasBasicAuthConflict && !conflictAcked && (
+                <div style={warningBox}>
+                  <span>Basic Auth is active — email rules won't be checked until Basic Auth is removed.</span>
+                  <div style={{ marginTop: 6 }}>
+                    <button style={btn('ghost')} onClick={() => setConflictAcked(true)}>I understand</button>
+                  </div>
                 </div>
-              ))}
-              <div style={row}>
-                <input value={newEmail} onChange={e => setNewEmail(e.target.value)}
-                  placeholder="email@example.com" style={{ ...inputSm, flex: 1 }} />
-                <select value={newProvider} onChange={e => setNewProvider(e.target.value)} style={inputSm}>
-                  {['any', 'google', 'github', 'hle'].map(p => <option key={p}>{p}</option>)}
-                </select>
-                <button style={btn('primary')} onClick={handleAddRule}>Add</button>
-              </div>
+              )}
+              {(!accessHasBasicAuthConflict || conflictAcked) && <>
+                {(rules ?? []).length === 0 && (
+                  <span style={{ color: '#6b7280', fontSize: 13 }}>No rules — all SSO users are allowed.</span>
+                )}
+                {(rules ?? []).map(r => (
+                  <div key={r.id} style={{ ...row, justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13 }}>
+                      {r.allowed_email}
+                      <span style={{ color: '#6b7280', marginLeft: 6 }}>via {r.provider}</span>
+                    </span>
+                    <button style={{ ...btn('danger'), padding: '2px 8px' }} onClick={() => handleDeleteRule(r.id)}>✕</button>
+                  </div>
+                ))}
+                <div style={row}>
+                  <input value={newEmail} onChange={e => setNewEmail(e.target.value)}
+                    placeholder="email@example.com" type="email" style={{ ...inputSm, flex: 1 }} />
+                  <select value={newProvider} onChange={e => setNewProvider(e.target.value)} style={inputSm}>
+                    {['any', 'google', 'github', 'hle'].map(p => <option key={p}>{p}</option>)}
+                  </select>
+                  <button style={btn('primary')} onClick={handleAddRule} disabled={!newEmail || !/\S+@\S+\.\S+/.test(newEmail)}>Add</button>
+                </div>
+              </>}
             </>
           }
         </div>
@@ -391,14 +506,43 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
               <span style={{ fontSize: 13, color: hasPin ? '#4ade80' : '#6b7280' }}>
                 {hasPin ? '🔐 PIN is set' : 'No PIN — visitors only need SSO login'}
               </span>
-              <div style={row}>
-                <input value={newPin} onChange={e => setNewPin(e.target.value)}
-                  placeholder="4-8 digits" type="password" style={{ ...inputSm, width: 120 }} />
-                <button style={btn('primary')} onClick={handleSetPin} disabled={!newPin}>
-                  {hasPin ? 'Update PIN' : 'Set PIN'}
-                </button>
-                {hasPin && <button style={btn('danger')} onClick={handleRemovePin}>Remove PIN</button>}
-              </div>
+
+              {/* Conflict warning: Basic Auth active */}
+              {pinHasBasicAuthConflict && !hasPin && !conflictAcked && (
+                <div style={warningBox}>
+                  <span>Basic Auth is active — this PIN won't be checked until Basic Auth is removed.</span>
+                  <div style={{ marginTop: 6 }}>
+                    <button style={btn('ghost')} onClick={() => setConflictAcked(true)}>I understand</button>
+                  </div>
+                </div>
+              )}
+
+              {(!pinHasBasicAuthConflict || hasPin || conflictAcked) && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={row}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <input value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                        placeholder="4-8 digits" type="password" maxLength={8}
+                        style={pinTouched && !pinValid ? inputErr : { ...inputSm, width: 120 }} />
+                      {pinTouched && !pinValid && (
+                        <span style={{ fontSize: 11, color: '#ef4444' }}>Must be 4-8 digits</span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <input value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                        placeholder="Confirm PIN" type="password" maxLength={8}
+                        style={confirmPinTouched && !pinMatch ? inputErr : { ...inputSm, width: 120 }} />
+                      {confirmPinTouched && !pinMatch && (
+                        <span style={{ fontSize: 11, color: '#ef4444' }}>PINs don't match</span>
+                      )}
+                    </div>
+                    <button style={btn('primary')} onClick={handleSetPin} disabled={!pinValid || !pinMatch}>
+                      {hasPin ? 'Update PIN' : 'Set PIN'}
+                    </button>
+                  </div>
+                  {hasPin && <button style={{ ...btn('danger'), alignSelf: 'flex-start' }} onClick={handleRemovePin}>Remove PIN</button>}
+                </div>
+              )}
             </>
           }
         </div>
@@ -419,18 +563,59 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
                   ? `Enabled (user: ${basicAuth.username})`
                   : 'Not configured'}
               </span>
-              <div style={row}>
-                <input value={baUsername} onChange={e => setBaUsername(e.target.value)}
-                  placeholder="username" style={{ ...inputSm, width: 140 }} />
-                <input value={baPassword} onChange={e => setBaPassword(e.target.value)}
-                  placeholder="password" type="password" style={{ ...inputSm, width: 140 }} />
-                <button style={btn('primary')} onClick={handleSetBasicAuth} disabled={!baUsername || !baPassword}>
-                  {basicAuth?.has_basic_auth ? 'Update' : 'Set'}
-                </button>
-                {basicAuth?.has_basic_auth && (
-                  <button style={btn('danger')} onClick={handleRemoveBasicAuth}>Remove</button>
-                )}
-              </div>
+
+              {/* Conflict warning: PIN or email rules exist */}
+              {baHasConflict && !conflictAcked && (
+                <div style={warningBox}>
+                  <span>This tunnel has {baConflicts.join(' and ')} — enabling Basic Auth will bypass them.</span>
+                  <div style={{ marginTop: 6 }}>
+                    <button style={btn('ghost')} onClick={() => setConflictAcked(true)}>I understand</button>
+                  </div>
+                </div>
+              )}
+
+              {(!baHasConflict || conflictAcked || basicAuth?.has_basic_auth) && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <input value={baUsername} onChange={e => setBaUsername(e.target.value)}
+                        placeholder="username" autoComplete="off"
+                        style={baUsernameTouched && !baUsernameValid ? inputErr : { ...inputSm }} />
+                      {baUsernameTouched && !baUsernameValid && (
+                        <span style={{ fontSize: 11, color: '#ef4444' }}>
+                          {baUsername.includes(':') ? 'Must not contain ":"' : 'Required'}
+                        </span>
+                      )}
+                    </div>
+                    <div />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <input value={baPassword} onChange={e => setBaPassword(e.target.value)}
+                        placeholder="password (min 8 chars)" type="password" autoComplete="new-password"
+                        style={baPasswordTouched && !baPasswordValid ? inputErr : { ...inputSm }} />
+                      {baPasswordTouched && !baPasswordValid && (
+                        <span style={{ fontSize: 11, color: '#ef4444' }}>Minimum 8 characters</span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <input value={baConfirmPassword} onChange={e => setBaConfirmPassword(e.target.value)}
+                        placeholder="confirm password" type="password" autoComplete="new-password"
+                        style={baConfirmTouched && !baPasswordMatch ? inputErr : { ...inputSm }} />
+                      {baConfirmTouched && !baPasswordMatch && (
+                        <span style={{ fontSize: 11, color: '#ef4444' }}>Passwords don't match</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={row}>
+                    <button style={btn('primary')} onClick={handleSetBasicAuth}
+                      disabled={!baUsernameValid || !baPasswordValid || !baPasswordMatch}>
+                      {basicAuth?.has_basic_auth ? 'Update' : 'Set'}
+                    </button>
+                    {basicAuth?.has_basic_auth && (
+                      <button style={btn('danger')} onClick={handleRemoveBasicAuth}>Remove</button>
+                    )}
+                  </div>
+                </div>
+              )}
             </>
           }
         </div>

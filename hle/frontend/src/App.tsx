@@ -454,9 +454,7 @@ export default function App() {
   const [loadError, setLoadError] = useState('')
 
   const [haStatus, setHaStatus] = useState<HaSetupStatus | null>(null)
-  const [restartNeeded, setRestartNeeded] = useState(
-    () => localStorage.getItem('hle_restart_needed') === '1'
-  )
+  const [restartNeeded, setRestartNeeded] = useState(false)
 
   // Load config to determine if key is set
   useEffect(() => {
@@ -466,7 +464,13 @@ export default function App() {
       if (!cfg.api_key_set) setSettingsOpen(true)
     }).catch(() => { setApiKeySet(false); setSettingsOpen(true) })
 
-    getHaSetupStatus().then(setHaStatus).catch(() => null)
+    getHaSetupStatus().then(status => {
+      setHaStatus(status)
+      // Only show restart banner if the backend confirms a pending restart
+      // (the sentinel file /data/restart_pending exists). This prevents
+      // stale banners after addon updates or HA restarts.
+      setRestartNeeded(status.restart_pending)
+    }).catch(() => null)
   }, [])
 
   const loadTunnels = useCallback(async () => {
@@ -487,19 +491,15 @@ export default function App() {
   }
 
   function handleHaApplied() {
-    setHaStatus({ status: 'configured' })
+    setHaStatus({ status: 'configured', restart_pending: true })
     setRestartNeeded(true)
-    localStorage.setItem('hle_restart_needed', '1')
   }
 
   function dismissRestartBanner() {
     setRestartNeeded(false)
-    localStorage.removeItem('hle_restart_needed')
   }
 
   async function handleRestart() {
-    // Clear localStorage BEFORE calling restart — if the page reloads
-    // mid-request (HA goes down fast), we don't want the banner reappearing.
     dismissRestartBanner()
     await restartHaCore()
   }

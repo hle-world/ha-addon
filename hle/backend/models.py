@@ -17,6 +17,7 @@ class TunnelConfig(BaseModel):
     websocket_enabled: bool = True
     api_key: Optional[str] = None       # per-tunnel key override; falls back to global
     upstream_basic_auth: Optional[str] = None   # "user:pass" injected into upstream requests
+    forward_host: bool = False           # forward browser's Host header to local service
     subdomain: Optional[str] = None     # populated once tunnel connects to relay
 
 
@@ -36,6 +37,7 @@ class AddTunnelRequest(BaseModel):
     websocket_enabled: bool = True
     api_key: Optional[str] = None
     upstream_basic_auth: Optional[str] = None
+    forward_host: bool = False
 
 
 class UpdateTunnelRequest(BaseModel):
@@ -47,6 +49,7 @@ class UpdateTunnelRequest(BaseModel):
     websocket_enabled: Optional[bool] = None
     api_key: Optional[str] = None       # set to "" to clear the override
     upstream_basic_auth: Optional[str] = None   # set to "" to clear
+    forward_host: Optional[bool] = None
 
 
 class UpdateConfigRequest(BaseModel):

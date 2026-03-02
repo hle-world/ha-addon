@@ -91,6 +91,7 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
   const [editWebsocket, setEditWebsocket] = useState(tunnel.websocket_enabled)
   const [editApiKey, setEditApiKey] = useState(tunnel.api_key ?? '')
   const [editUpstreamBasicAuth, setEditUpstreamBasicAuth] = useState(tunnel.upstream_basic_auth ?? '')
+  const [editForwardHost, setEditForwardHost] = useState(tunnel.forward_host)
   const [editSaving, setEditSaving] = useState(false)
 
   const sub = tunnel.subdomain
@@ -111,6 +112,7 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
       setEditWebsocket(tunnel.websocket_enabled)
       setEditApiKey(tunnel.api_key ?? '')
       setEditUpstreamBasicAuth(tunnel.upstream_basic_auth ?? '')
+      setEditForwardHost(tunnel.forward_host)
     }
     if (p === 'pin') { setNewPin(''); setConfirmPin('') }
     if (p === 'basic-auth') { setBaUsername(''); setBaPassword(''); setBaConfirmPassword('') }
@@ -163,6 +165,7 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
         websocket_enabled: editWebsocket,
         api_key: editApiKey || null,
         upstream_basic_auth: editUpstreamBasicAuth || null,
+        forward_host: editForwardHost,
       })
       setPanel(null)
       onRefresh()
@@ -439,6 +442,14 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
               Enable WebSocket
               <span
                 title="Required for Home Assistant, VS Code Server, and other services that use WebSockets."
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#2d3139', color: '#9ca3af', fontSize: 10, fontWeight: 700, cursor: 'help' }}
+              >?</span>
+            </label>
+            <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', fontSize: 13 }}>
+              <input type="checkbox" checked={editForwardHost} onChange={e => setEditForwardHost(e.target.checked)} />
+              Forward Host header
+              <span
+                title="Forward the browser's Host header to the local service. Enable for services that validate the Host header (e.g. Home Assistant with external_url)."
                 style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: '#2d3139', color: '#9ca3af', fontSize: 10, fontWeight: 700, cursor: 'help' }}
               >?</span>
             </label>

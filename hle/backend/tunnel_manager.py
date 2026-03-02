@@ -55,6 +55,8 @@ async def _spawn(cfg: TunnelConfig) -> asyncio.subprocess.Process:
         cmd.append("--no-websocket")
     if cfg.upstream_basic_auth:
         cmd.extend(["--upstream-basic-auth", cfg.upstream_basic_auth])
+    if cfg.forward_host:
+        cmd.append("--forward-host")
     env = {**os.environ}
     if cfg.api_key:
         env["HLE_API_KEY"] = cfg.api_key  # per-tunnel override; not visible in `ps`
@@ -147,6 +149,7 @@ async def add_tunnel(req: AddTunnelRequest) -> TunnelConfig:
         websocket_enabled=req.websocket_enabled,
         api_key=req.api_key or None,
         upstream_basic_auth=req.upstream_basic_auth or None,
+        forward_host=req.forward_host,
     )
     proc = await _spawn(cfg)
     _processes[cfg.id] = proc

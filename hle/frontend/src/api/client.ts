@@ -68,11 +68,11 @@ export interface NetworkInfo {
 }
 
 export type HaSetupStatus =
-  | { status: 'configured' }
-  | { status: 'subnet_missing'; subnet: string }
-  | { status: 'not_configured'; subnet: string }
-  | { status: 'has_http_section'; subnet: string }
-  | { status: 'no_file' }
+  | { status: 'configured'; restart_pending: boolean }
+  | { status: 'subnet_missing'; subnet: string; restart_pending: boolean }
+  | { status: 'not_configured'; subnet: string; restart_pending: boolean }
+  | { status: 'has_http_section'; subnet: string; restart_pending: boolean }
+  | { status: 'no_file'; restart_pending: boolean }
 
 export type HaSetupApplyResult =
   | { status: 'applied'; subnet: string }

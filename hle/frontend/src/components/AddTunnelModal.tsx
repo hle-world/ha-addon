@@ -36,6 +36,7 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
   const [websocket, setWebsocket] = useState(true)
   const [apiKeyOverride, setApiKeyOverride] = useState('')
   const [upstreamBasicAuth, setUpstreamBasicAuth] = useState('')
+  const [forwardHost, setForwardHost] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -52,6 +53,7 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
         websocket_enabled: websocket,
         api_key: apiKeyOverride || undefined,
         upstream_basic_auth: upstreamBasicAuth || undefined,
+        forward_host: forwardHost || undefined,
       })
       onAdded()
     } catch (e) {
@@ -119,6 +121,15 @@ export function AddTunnelModal({ onClose, onAdded }: Props) {
               <span>Enable WebSocket support</span>
               <span
                 title="Required for services that use WebSockets (Home Assistant, VS Code Server, etc.). Disable only if the service does not support them and you're seeing connection issues."
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', background: '#2d3139', color: '#9ca3af', fontSize: 11, fontWeight: 700, cursor: 'help', userSelect: 'none' }}
+              >?</span>
+            </label>
+
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', fontSize: 14 }}>
+              <input type="checkbox" checked={forwardHost} onChange={e => setForwardHost(e.target.checked)} />
+              <span>Forward Host header</span>
+              <span
+                title="Forward the browser's Host header to the local service. Enable for services like Home Assistant that validate the Host header against their external_url. By default, the Host header is set from the target URL to avoid 502 errors behind reverse proxies."
                 style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', background: '#2d3139', color: '#9ca3af', fontSize: 11, fontWeight: 700, cursor: 'help', userSelect: 'none' }}
               >?</span>
             </label>

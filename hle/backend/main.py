@@ -242,19 +242,20 @@ def _detect_subnet() -> str:
 @app.get("/api/ha-setup/status")
 async def ha_setup_status():
     """Check whether configuration.yaml already has the proxy settings."""
+    restart_pending = RESTART_PENDING.exists()
     if not HA_CONFIG.exists():
-        return {"status": "no_file"}
+        return {"status": "no_file", "restart_pending": restart_pending}
     text = HA_CONFIG.read_text(errors="replace")
     subnet = _detect_subnet()
     if "use_x_forwarded_for" in text:
         # Also verify the addon's subnet is actually listed — having
         # use_x_forwarded_for without our subnet still causes 400 errors.
         if subnet in text:
-            return {"status": "configured"}
-        return {"status": "subnet_missing", "subnet": subnet}
+            return {"status": "configured", "restart_pending": restart_pending}
+        return {"status": "subnet_missing", "subnet": subnet, "restart_pending": restart_pending}
     if re.search(r"^http:", text, re.MULTILINE):
-        return {"status": "has_http_section", "subnet": subnet}
-    return {"status": "not_configured", "subnet": subnet}
+        return {"status": "has_http_section", "subnet": subnet, "restart_pending": restart_pending}
+    return {"status": "not_configured", "subnet": subnet, "restart_pending": restart_pending}
 
 
 @app.post("/api/ha-setup/apply")

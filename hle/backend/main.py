@@ -16,8 +16,13 @@ from fastapi.staticfiles import StaticFiles  # noqa: F401 — used in conditiona
 
 from backend import hle_api
 from backend.models import (
-    AddAccessRuleRequest, AddTunnelRequest, CreateShareLinkRequest,
-    SetBasicAuthRequest, SetPinRequest, TunnelStatus, UpdateConfigRequest,
+    AddAccessRuleRequest,
+    AddTunnelRequest,
+    CreateShareLinkRequest,
+    SetBasicAuthRequest,
+    SetPinRequest,
+    TunnelStatus,
+    UpdateConfigRequest,
     UpdateTunnelRequest,
 )
 from backend import tunnel_manager as tm
@@ -32,27 +37,33 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=lifespan)
 
-HLE_CONFIG      = Path("/data/hle_config.json")  # our own file, not managed by HA Supervisor
-HA_CONFIG       = Path("/config/configuration.yaml")
-RESTART_PENDING = Path("/data/restart_pending")   # sentinel: written on config apply, deleted when HA comes back up
-STATIC_DIR      = Path("/app/backend/static")
-SUPERVISOR_API  = "http://supervisor"
-HA_HOST         = "homeassistant.local.hass.io"
-HA_PORT         = 8123
+HLE_CONFIG = Path("/data/hle_config.json")  # our own file, not managed by HA Supervisor
+HA_CONFIG = Path("/config/configuration.yaml")
+RESTART_PENDING = Path(
+    "/data/restart_pending"
+)  # sentinel: written on config apply, deleted when HA comes back up
+STATIC_DIR = Path("/app/backend/static")
+SUPERVISOR_API = "http://supervisor"
+HA_HOST = "homeassistant.local.hass.io"
+HA_PORT = 8123
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _require_api_key() -> None:
     if not os.environ.get("HLE_API_KEY"):
-        raise HTTPException(status_code=400, detail="API key not configured. Set it in Settings first.")
+        raise HTTPException(
+            status_code=400, detail="API key not configured. Set it in Settings first."
+        )
 
 
 # ---------------------------------------------------------------------------
 # Tunnel management
 # ---------------------------------------------------------------------------
+
 
 @app.get("/api/tunnels", response_model=list[TunnelStatus])
 async def list_tunnels():
@@ -99,6 +110,7 @@ async def stop_tunnel(tunnel_id: str):
 # Tunnel logs
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/tunnels/{tunnel_id}/logs")
 async def get_tunnel_logs(tunnel_id: str, lines: int = 100):
     log_path = Path(f"/data/logs/tunnel-{tunnel_id}.log")
@@ -113,12 +125,15 @@ async def get_tunnel_logs(tunnel_id: str, lines: int = 100):
 # Access rules (keyed by subdomain, proxied to relay)
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/tunnels/{subdomain}/access")
 async def list_access_rules(subdomain: str):
     try:
         return await hle_api.list_access_rules(subdomain)
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 @app.post("/api/tunnels/{subdomain}/access", status_code=201)
@@ -126,7 +141,9 @@ async def add_access_rule(subdomain: str, req: AddAccessRuleRequest):
     try:
         return await hle_api.add_access_rule(subdomain, req.email, req.provider)
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 @app.delete("/api/tunnels/{subdomain}/access/{rule_id}", status_code=204)
@@ -134,19 +151,24 @@ async def delete_access_rule(subdomain: str, rule_id: int):
     try:
         await hle_api.delete_access_rule(subdomain, rule_id)
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 # ---------------------------------------------------------------------------
 # PIN protection (keyed by subdomain)
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/tunnels/{subdomain}/pin")
 async def get_pin_status(subdomain: str):
     try:
         return await hle_api.get_pin_status(subdomain)
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 @app.put("/api/tunnels/{subdomain}/pin", status_code=204)
@@ -154,7 +176,9 @@ async def set_pin(subdomain: str, req: SetPinRequest):
     try:
         await hle_api.set_pin(subdomain, req.pin)
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 @app.delete("/api/tunnels/{subdomain}/pin", status_code=204)
@@ -162,19 +186,24 @@ async def remove_pin(subdomain: str):
     try:
         await hle_api.remove_pin(subdomain)
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 # ---------------------------------------------------------------------------
 # Basic auth (keyed by subdomain)
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/tunnels/{subdomain}/basic-auth")
 async def get_basic_auth_status(subdomain: str):
     try:
         return await hle_api.get_basic_auth_status(subdomain)
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 @app.put("/api/tunnels/{subdomain}/basic-auth", status_code=204)
@@ -182,7 +211,9 @@ async def set_basic_auth(subdomain: str, req: SetBasicAuthRequest):
     try:
         await hle_api.set_basic_auth(subdomain, req.username, req.password)
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 @app.delete("/api/tunnels/{subdomain}/basic-auth", status_code=204)
@@ -190,27 +221,36 @@ async def remove_basic_auth(subdomain: str):
     try:
         await hle_api.remove_basic_auth(subdomain)
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 # ---------------------------------------------------------------------------
 # Share links (keyed by subdomain)
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/tunnels/{subdomain}/share")
 async def list_share_links(subdomain: str):
     try:
         return await hle_api.list_share_links(subdomain)
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 @app.post("/api/tunnels/{subdomain}/share", status_code=201)
 async def create_share_link(subdomain: str, req: CreateShareLinkRequest):
     try:
-        return await hle_api.create_share_link(subdomain, req.duration, req.label, req.max_uses)
+        return await hle_api.create_share_link(
+            subdomain, req.duration, req.label, req.max_uses
+        )
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 @app.delete("/api/tunnels/{subdomain}/share/{link_id}", status_code=204)
@@ -218,7 +258,9 @@ async def delete_share_link(subdomain: str, link_id: int):
     try:
         await hle_api.delete_share_link(subdomain, link_id)
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -229,10 +271,13 @@ async def delete_share_link(subdomain: str, link_id: int):
 # HA configuration.yaml auto-setup
 # ---------------------------------------------------------------------------
 
+
 def _detect_subnet() -> str:
     """Return the /23 subnet this addon uses to reach HA (e.g. '172.30.32.0/23')."""
     try:
-        with socket.create_connection(("homeassistant.local.hass.io", 8123), timeout=2) as s:
+        with socket.create_connection(
+            ("homeassistant.local.hass.io", 8123), timeout=2
+        ) as s:
             addon_ip = s.getsockname()[0]
         return str(ipaddress.ip_network(f"{addon_ip}/23", strict=False))
     except Exception:
@@ -252,17 +297,31 @@ async def ha_setup_status():
         # use_x_forwarded_for without our subnet still causes 400 errors.
         if subnet in text:
             return {"status": "configured", "restart_pending": restart_pending}
-        return {"status": "subnet_missing", "subnet": subnet, "restart_pending": restart_pending}
+        return {
+            "status": "subnet_missing",
+            "subnet": subnet,
+            "restart_pending": restart_pending,
+        }
     if re.search(r"^http:", text, re.MULTILINE):
-        return {"status": "has_http_section", "subnet": subnet, "restart_pending": restart_pending}
-    return {"status": "not_configured", "subnet": subnet, "restart_pending": restart_pending}
+        return {
+            "status": "has_http_section",
+            "subnet": subnet,
+            "restart_pending": restart_pending,
+        }
+    return {
+        "status": "not_configured",
+        "subnet": subnet,
+        "restart_pending": restart_pending,
+    }
 
 
 @app.post("/api/ha-setup/apply")
 async def ha_setup_apply():
     """Append the http proxy block (or just the missing subnet) to configuration.yaml."""
     if not HA_CONFIG.exists():
-        raise HTTPException(status_code=404, detail="configuration.yaml not found at /config/")
+        raise HTTPException(
+            status_code=404, detail="configuration.yaml not found at /config/"
+        )
     text = HA_CONFIG.read_text(errors="replace")
     subnet = _detect_subnet()
 
@@ -273,7 +332,11 @@ async def ha_setup_apply():
         # insert the subnet after the last entry under trusted_proxies.
         lines = text.splitlines(keepends=True)
         tp_idx = next(
-            (i for i, l in enumerate(lines) if re.match(r"[ \t]*trusted_proxies\s*:", l)),
+            (
+                i
+                for i, line in enumerate(lines)
+                if re.match(r"[ \t]*trusted_proxies\s*:", line)
+            ),
             None,
         )
         if tp_idx is None:
@@ -365,7 +428,9 @@ async def get_network_info():
     subnet: str | None = None
     try:
         # Connect toward HA so the OS picks the right source interface.
-        with socket.create_connection(("homeassistant.local.hass.io", 8123), timeout=2) as s:
+        with socket.create_connection(
+            ("homeassistant.local.hass.io", 8123), timeout=2
+        ) as s:
             addon_ip = s.getsockname()[0]
         # HA Supervisor always allocates addon IPs inside a /23 block.
         net = ipaddress.ip_network(f"{addon_ip}/23", strict=False)
@@ -408,6 +473,7 @@ async def update_config(req: UpdateConfigRequest):
 if STATIC_DIR.exists():
     app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 else:
+
     @app.get("/")
     async def index():
         return {"status": "frontend not built"}

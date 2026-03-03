@@ -173,7 +173,7 @@ jobs:
         with:
           # Use PAT so the version bump commit triggers downstream workflows
           # (GITHUB_TOKEN commits are silently ignored by Actions).
-          token: ${{ secrets.RELEASE_TOKEN }}
+          token: ${{ secrets.HLE_PAT }}
           ref: main
 
       - name: Bump config.yaml version
@@ -191,7 +191,7 @@ jobs:
 
       - name: Promote to full release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.HLE_PAT }}
           VERSION: ${{ github.event.release.tag_name }}
         run: |
           gh release edit "${VERSION}" --prerelease=false --latest

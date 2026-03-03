@@ -169,7 +169,7 @@ async def get_tunnel_favicon(tunnel_id: str):
 
     service_url = status.service_url.rstrip("/")
 
-    async with httpx.AsyncClient(timeout=3, verify=False) as client:
+    async with httpx.AsyncClient(timeout=3, verify=False) as client:  # nosec B501 — local LAN services often use self-signed certs
         # Try /favicon.ico first
         icon_data: bytes | None = None
         icon_ct = "image/x-icon"
@@ -177,7 +177,11 @@ async def get_tunnel_favicon(tunnel_id: str):
             resp = await client.get(f"{service_url}/favicon.ico", follow_redirects=True)
             if resp.status_code == 200 and len(resp.content) > 0:
                 ct_header = resp.headers.get("content-type", "")
-                if "image" in ct_header or "octet-stream" in ct_header or resp.content[:4] in (b"\x00\x00\x01\x00", b"\x89PNG"):
+                if (
+                    "image" in ct_header
+                    or "octet-stream" in ct_header
+                    or resp.content[:4] in (b"\x00\x00\x01\x00", b"\x89PNG")
+                ):
                     icon_data = resp.content
                     if "png" in ct_header:
                         icon_ct = "image/png"

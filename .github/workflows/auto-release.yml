@@ -63,7 +63,8 @@ jobs:
           if [[ "$SOURCE" == "client-sync" ]]; then
             NOTES="Synced to hle-client v${VERSION}. See [hle-client release notes](https://github.com/hle-world/hle-client/releases/tag/v${VERSION}) for details."
           else
-            NOTES="Addon update: ${PR_TITLE} (#${PR_NUMBER})"
+            # Use printf to safely escape PR_TITLE (user-controlled input)
+            NOTES=$(printf 'Addon update: %s (#%s)' "$PR_TITLE" "$PR_NUMBER")
           fi
           gh release create "v${VERSION}" \
             --prerelease \

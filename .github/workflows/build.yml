@@ -20,13 +20,13 @@ jobs:
       - name: Install git
         run: apt-get update && apt-get install -y git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@692973e3d937d1afb5f8355e64d32566a30ded47
 
       - name: Build
         working-directory: hle/frontend
         run: npm ci && npm run build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@26f56dfd3d1aba4fc0bc8c14fb016b099a072191
         with:
           name: frontend-dist
           path: hle/frontend/dist/
@@ -58,9 +58,9 @@ jobs:
       - name: Install tools
         run: apt-get update && apt-get install -y git buildah ca-certificates
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@692973e3d937d1afb5f8355e64d32566a30ded47
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@6b208ae046445ea386d8e5a50aab216da9541aeae
         with:
           name: frontend-dist
           path: hle/static/
@@ -99,9 +99,9 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@692973e3d937d1afb5f8355e64d32566a30ded47
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@6b208ae046445ea386d8e5a50aab216da9541aeae
         with:
           name: frontend-dist
           path: hle/static/
@@ -169,7 +169,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@692973e3d937d1afb5f8355e64d32566a30ded47
         with:
           # Use PAT so the version bump commit triggers downstream workflows
           # (GITHUB_TOKEN commits are silently ignored by Actions).

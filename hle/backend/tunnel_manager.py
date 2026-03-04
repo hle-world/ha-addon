@@ -150,8 +150,7 @@ async def _monitor_tunnel(cfg_id: str, service_url: str, label: str) -> None:
         try:
             live = await hle_api.list_live_tunnels()
             found = any(
-                t.get("service_url") == service_url
-                or t.get("service_label") == label
+                t.get("service_url") == service_url or t.get("service_label") == label
                 for t in live
             )
             if found:

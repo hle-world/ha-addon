@@ -183,9 +183,7 @@ async def get_tunnel_favicon(tunnel_id: str):
 
         for path in favicon_paths:
             try:
-                resp = await client.get(
-                    f"{service_url}{path}", follow_redirects=True
-                )
+                resp = await client.get(f"{service_url}{path}", follow_redirects=True)
                 if resp.status_code == 200 and len(resp.content) > 0:
                     ct_header = resp.headers.get("content-type", "")
                     if (

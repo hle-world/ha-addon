@@ -45,7 +45,7 @@ app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=li
 HLE_CONFIG = Path("/data/hle_config.json")  # our own file, not managed by HA Supervisor
 HA_CONFIG = Path("/config/configuration.yaml")
 RESTART_NEEDED = Path(
-    "/tmp/restart_needed"
+    "/tmp/restart_needed"  # nosec B108 — intentional use of /tmp in addon container
 )  # sentinel: created on config apply, auto-cleared when config is confirmed
 STATIC_DIR = Path("/app/backend/static")
 SUPERVISOR_API = "http://supervisor"

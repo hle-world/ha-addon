@@ -3,7 +3,7 @@ import type { TunnelStatus, HaSetupStatus, HaSetupApplyResult } from './api/clie
 import {
   getConfig, updateConfig,
   getTunnels,
-  getHaSetupStatus, applyHaSetup, restartHaCore, pingHa,
+  getHaSetupStatus, applyHaSetup, restartHaCore, dismissHaRestart, pingHa,
 } from './api/client'
 import { TunnelCard } from './components/TunnelCard'
 import { AddTunnelModal } from './components/AddTunnelModal'
@@ -497,6 +497,7 @@ export default function App() {
 
   function dismissRestartBanner() {
     setRestartNeeded(false)
+    dismissHaRestart().catch(() => null)
   }
 
   async function handleRestart() {

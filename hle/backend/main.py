@@ -7,6 +7,7 @@ import json
 import os
 import re
 import socket
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -32,6 +33,8 @@ from backend.tunnel_manager import DuplicateLabelError
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Clean up old sentinel location from previous versions
+    Path("/data/restart_pending").unlink(missing_ok=True)
     await tm.restore_all()
     yield
     await tm.shutdown_all()
@@ -41,9 +44,9 @@ app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=li
 
 HLE_CONFIG = Path("/data/hle_config.json")  # our own file, not managed by HA Supervisor
 HA_CONFIG = Path("/config/configuration.yaml")
-RESTART_PENDING = Path(
-    "/data/restart_pending"
-)  # sentinel: written on config apply, deleted when HA comes back up
+RESTART_NEEDED = Path(
+    "/tmp/restart_needed"  # nosec B108 — intentional use of /tmp in addon container
+)  # sentinel: created on config apply, auto-cleared when config is confirmed
 STATIC_DIR = Path("/app/backend/static")
 SUPERVISOR_API = "http://supervisor"
 HA_HOST = "homeassistant.local.hass.io"
@@ -414,34 +417,57 @@ def _detect_subnet() -> str:
         return "172.30.32.0/23"
 
 
+def _sentinel_stale() -> bool:
+    """Return True if the restart sentinel is old enough that HA has likely
+    been restarted since it was created.
+
+    After "Apply", the user must restart HA for config changes to take effect.
+    A restart typically takes 10-60 seconds.  We use a 2-minute threshold: if
+    the sentinel is older than that and the config file looks correct, we
+    assume the restart happened (or the user chose not to restart).
+    """
+    try:
+        return (time.time() - RESTART_NEEDED.stat().st_mtime) > 120
+    except OSError:
+        return False
+
+
 @app.get("/api/ha-setup/status")
 async def ha_setup_status():
-    """Check whether configuration.yaml already has the proxy settings."""
-    restart_pending = RESTART_PENDING.exists()
+    """Check whether configuration.yaml already has the proxy settings.
+
+    Called on every page load.  When the config is correct *and* the
+    sentinel is old enough that HA has likely restarted, the sentinel is
+    auto-cleared so the restart banner disappears.
+    """
+    restart_needed = RESTART_NEEDED.exists()
     if not HA_CONFIG.exists():
-        return {"status": "no_file", "restart_pending": restart_pending}
+        return {"status": "no_file", "restart_pending": restart_needed}
     text = HA_CONFIG.read_text(errors="replace")
     subnet = _detect_subnet()
     if "use_x_forwarded_for" in text:
-        # Also verify the addon's subnet is actually listed — having
-        # use_x_forwarded_for without our subnet still causes 400 errors.
         if subnet in text:
-            return {"status": "configured", "restart_pending": restart_pending}
+            # Config looks correct.  If the sentinel is old enough, assume
+            # the restart has already happened and auto-clear.
+            if restart_needed and _sentinel_stale():
+                RESTART_NEEDED.unlink(missing_ok=True)
+                restart_needed = False
+            return {"status": "configured", "restart_pending": restart_needed}
         return {
             "status": "subnet_missing",
             "subnet": subnet,
-            "restart_pending": restart_pending,
+            "restart_pending": restart_needed,
         }
     if re.search(r"^http:", text, re.MULTILINE):
         return {
             "status": "has_http_section",
             "subnet": subnet,
-            "restart_pending": restart_pending,
+            "restart_pending": restart_needed,
         }
     return {
         "status": "not_configured",
         "subnet": subnet,
-        "restart_pending": restart_pending,
+        "restart_pending": restart_needed,
     }
 
 
@@ -492,7 +518,7 @@ async def ha_setup_apply():
         new_line = f"{entry_indent}- {subnet}  # Added by HLE addon\n"
         lines.insert(last_entry_idx + 1, new_line)
         HA_CONFIG.write_text("".join(lines))
-        RESTART_PENDING.write_text("1")
+        RESTART_NEEDED.write_text("1")
         return {"status": "applied", "subnet": subnet}
 
     if re.search(r"^http:", text, re.MULTILINE):
@@ -513,7 +539,7 @@ async def ha_setup_apply():
         f"    - {subnet}\n"
     )
     HA_CONFIG.write_text(text + block)
-    RESTART_PENDING.write_text("1")
+    RESTART_NEEDED.write_text("1")
     return {"status": "applied", "subnet": subnet}
 
 
@@ -535,8 +561,19 @@ async def ha_setup_restart():
         raise HTTPException(status_code=503, detail=f"Supervisor unreachable: {exc}")
     # Clear the sentinel immediately — even if the page reloads before the
     # response arrives, the backend has already recorded the restart intent.
-    RESTART_PENDING.unlink(missing_ok=True)
+    RESTART_NEEDED.unlink(missing_ok=True)
     return {"status": "restarting"}
+
+
+@app.post("/api/ha-setup/dismiss", status_code=204)
+async def ha_setup_dismiss():
+    """Clear the restart-needed sentinel.
+
+    Called by the frontend when:
+    - The user clicks the dismiss button on the restart banner.
+    - The RestartBanner detects HA has come back up after a restart.
+    """
+    RESTART_NEEDED.unlink(missing_ok=True)
 
 
 @app.get("/api/ha-ping")

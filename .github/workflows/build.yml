@@ -20,7 +20,7 @@ jobs:
       - name: Install git
         run: apt-get update && apt-get install -y git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build
         working-directory: hle/frontend
@@ -58,7 +58,7 @@ jobs:
       - name: Install tools
         run: apt-get update && apt-get install -y git buildah ca-certificates
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/download-artifact@v4
         with:
@@ -99,7 +99,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/download-artifact@v4
         with:
@@ -169,7 +169,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # Use PAT so the version bump commit triggers downstream workflows
           # (GITHUB_TOKEN commits are silently ignored by Actions).

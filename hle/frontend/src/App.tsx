@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { Logo } from './components/Logo'
 import type { TunnelStatus, HaSetupStatus, HaSetupApplyResult } from './api/client'
 import {
   getConfig, updateConfig,
@@ -9,36 +10,29 @@ import { TunnelCard } from './components/TunnelCard'
 import { AddTunnelModal } from './components/AddTunnelModal'
 
 // ---------------------------------------------------------------------------
-// Shared styles
+// Shared inline style helpers (reference CSS variables from index.css)
 // ---------------------------------------------------------------------------
-const colors = {
-  bg: '#111318', surface: '#1e2128', border: '#2d3139',
-  text: '#e0e0e0', muted: '#9ca3af', faint: '#6b7280',
-  blue: '#3b82f6', blueDark: '#1d4ed8',
-  green: '#4ade80', yellow: '#facc15', red: '#f87171',
-  amber: '#fbbf24',
-}
-
 const inputStyle: React.CSSProperties = {
-  padding: '8px 12px', borderRadius: 7, border: `1px solid ${colors.border}`,
-  background: colors.surface, color: colors.text, fontSize: 14, width: '100%',
-  boxSizing: 'border-box',
+  padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)',
+  background: 'var(--surface)', color: 'var(--text)', fontSize: 14, width: '100%',
+  boxSizing: 'border-box', fontFamily: 'inherit',
 }
 const btnPrimary: React.CSSProperties = {
-  padding: '8px 18px', borderRadius: 7, border: 'none', cursor: 'pointer',
-  background: colors.blue, color: '#fff', fontSize: 13, fontWeight: 600,
+  padding: '8px 18px', borderRadius: 6, border: 'none', cursor: 'pointer',
+  background: 'var(--mint)', color: 'var(--bg)', fontSize: 13, fontWeight: 600,
+  fontFamily: 'inherit',
 }
 const btnGhost: React.CSSProperties = {
-  ...btnPrimary, background: colors.surface, border: `1px solid ${colors.border}`,
-  color: colors.muted,
+  ...btnPrimary, background: 'var(--surface)', border: '1px solid var(--border)',
+  color: 'var(--text-dim)',
 }
-const btnDanger: React.CSSProperties = { ...btnPrimary, background: '#ef4444' }
+const btnDanger: React.CSSProperties = { ...btnPrimary, background: 'var(--red)', color: '#fff' }
 const btnDisabled: React.CSSProperties = {
-  ...btnPrimary, background: colors.surface, color: colors.faint, cursor: 'not-allowed',
+  ...btnPrimary, background: 'var(--surface)', color: 'var(--text-xdim)', cursor: 'not-allowed',
 }
 const codeStyle: React.CSSProperties = {
-  background: '#0d1117', borderRadius: 6, padding: '10px 14px',
-  fontSize: 12, color: colors.muted, fontFamily: 'monospace',
+  background: 'var(--surface)', borderRadius: 6, padding: '10px 14px',
+  fontSize: 12, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)',
   whiteSpace: 'pre', overflowX: 'auto', margin: 0, lineHeight: 1.7,
 }
 
@@ -55,18 +49,19 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <div style={{ border: `1px solid ${colors.border}`, borderRadius: 10, overflow: 'hidden' }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
       <button
         onClick={onToggle}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '14px 20px', background: colors.surface, border: 'none', cursor: 'pointer',
-          color: colors.text, fontSize: 15, fontWeight: 700, textAlign: 'left',
+          padding: '14px 20px', background: 'var(--surface)', border: 'none', cursor: 'pointer',
+          color: 'var(--text)', fontSize: 15, fontWeight: 700, textAlign: 'left',
+          fontFamily: 'var(--font-display)',
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{
-            fontSize: 11, color: colors.muted, transform: open ? 'rotate(90deg)' : 'none',
+            fontSize: 11, color: 'var(--text-dim)', transform: open ? 'rotate(90deg)' : 'none',
             display: 'inline-block', transition: 'transform 0.15s',
           }}>▶</span>
           {title}
@@ -91,7 +86,6 @@ function RestartBanner({ onRestart, onDismiss }: { onRestart: () => void; onDism
 
   useEffect(() => {
     if (phase === 'idle') return
-    // Poll HA ping to detect down → up transition
     let wentDown = phase === 'waiting_down' ? false : true
     const id = setInterval(async () => {
       try {
@@ -114,16 +108,16 @@ function RestartBanner({ onRestart, onDismiss }: { onRestart: () => void; onDism
   if (phase !== 'idle') {
     return (
       <div style={{
-        background: '#1c1a07', border: `1px solid #713f12`,
-        borderRadius: 10, padding: '14px 18px',
+        background: 'var(--yellow-tint-bg)', border: '1px solid var(--yellow-tint-border)',
+        borderRadius: 'var(--radius)', padding: '14px 18px',
         display: 'flex', alignItems: 'center', gap: 10,
       }}>
         <span style={{ fontSize: 18 }}>⏳</span>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 14, color: colors.amber }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--yellow)' }}>
             {phase === 'waiting_down' ? 'Waiting for HA to go down…' : 'HA is restarting, waiting for it to come back up…'}
           </div>
-          <div style={{ fontSize: 13, color: '#d97706', marginTop: 2 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 2 }}>
             This will clear automatically once HA is back online.
           </div>
         </div>
@@ -133,18 +127,18 @@ function RestartBanner({ onRestart, onDismiss }: { onRestart: () => void; onDism
 
   return (
     <div style={{
-      background: '#451a03', border: `1px solid #92400e`,
-      borderRadius: 10, padding: '14px 18px',
+      background: 'var(--yellow-tint-bg)', border: '1px solid var(--yellow-tint-border)',
+      borderRadius: 'var(--radius)', padding: '14px 18px',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontSize: 18 }}>⚠️</span>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 14, color: colors.amber }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--yellow)' }}>
             Home Assistant restart required
           </div>
-          <div style={{ fontSize: 13, color: '#d97706', marginTop: 2 }}>
-            The proxy settings were written to <code style={{ color: colors.amber }}>configuration.yaml</code>.
+          <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 2 }}>
+            The proxy settings were written to <code style={{ color: 'var(--yellow)', fontFamily: 'var(--font-mono)' }}>configuration.yaml</code>.
             Restart HA Core to apply them.
           </div>
         </div>
@@ -156,7 +150,7 @@ function RestartBanner({ onRestart, onDismiss }: { onRestart: () => void; onDism
           </button>
         ) : (
           <>
-            <span style={{ fontSize: 13, color: colors.amber, alignSelf: 'center' }}>Are you sure?</span>
+            <span style={{ fontSize: 13, color: 'var(--yellow)', alignSelf: 'center' }}>Are you sure?</span>
             <button style={btnDanger} onClick={handleRestart}>Yes, restart</button>
             <button style={btnGhost} onClick={() => setConfirming(false)}>Cancel</button>
           </>
@@ -224,7 +218,6 @@ function SettingsContent({
     })
   }
 
-  // HA setup snippet shown for manual fallback
   const subnet = (haStatus && 'subnet' in haStatus) ? haStatus.subnet : '172.30.32.0/23'
   const yamlSnippet = `http:\n  use_x_forwarded_for: true\n  trusted_proxies:\n    - ${subnet}`
 
@@ -232,10 +225,10 @@ function SettingsContent({
     <>
       {/* API key */}
       <div style={{ marginTop: 4 }}>
-        <div style={{ fontSize: 13, color: colors.muted, fontWeight: 500, marginBottom: 6 }}>API Key</div>
+        <div style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 500, marginBottom: 6 }}>API Key</div>
         {masked && (
-          <p style={{ fontSize: 13, color: colors.faint, margin: '0 0 8px' }}>
-            Current: <code style={{ color: colors.muted }}>{masked}</code>
+          <p style={{ fontSize: 13, color: 'var(--text-xdim)', margin: '0 0 8px' }}>
+            Current: <code style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{masked}</code>
           </p>
         )}
         <div style={{ display: 'flex', gap: 8 }}>
@@ -255,54 +248,54 @@ function SettingsContent({
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
-        {error && <p style={{ color: colors.red, fontSize: 13, margin: '8px 0 0' }}>{error}</p>}
-        {saved && <p style={{ color: colors.green, fontSize: 13, margin: '8px 0 0' }}>✓ Saved — tunnels will start automatically.</p>}
-        <p style={{ fontSize: 12, color: colors.faint, margin: '8px 0 0' }}>
+        {error && <p style={{ color: 'var(--red)', fontSize: 13, margin: '8px 0 0' }}>{error}</p>}
+        {saved && <p style={{ color: 'var(--green)', fontSize: 13, margin: '8px 0 0' }}>✓ Saved — tunnels will start automatically.</p>}
+        <p style={{ fontSize: 12, color: 'var(--text-xdim)', margin: '8px 0 0' }}>
           New user?{' '}
-          <a href="https://hle.world/register" target="_blank" rel="noreferrer" style={{ color: colors.blue }}>
+          <a href="https://hle.world/register" target="_blank" rel="noreferrer" style={{ color: 'var(--mint)' }}>
             Create a free account
           </a>
           {' '}· API key at{' '}
-          <a href="https://hle.world/dashboard" target="_blank" rel="noreferrer" style={{ color: colors.blue }}>
+          <a href="https://hle.world/dashboard" target="_blank" rel="noreferrer" style={{ color: 'var(--mint)' }}>
             hle.world/dashboard
           </a>
         </p>
       </div>
 
       {/* Divider */}
-      <div style={{ borderTop: `1px solid ${colors.border}` }} />
+      <div style={{ borderTop: '1px solid var(--border)' }} />
 
       {/* HA proxy setup */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ fontSize: 13, color: colors.muted, fontWeight: 500 }}>
+        <div style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 500 }}>
           Home Assistant Proxy Settings
         </div>
 
         {haStatus?.status === 'configured' && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
-            background: '#052e16', border: `1px solid #166534`, borderRadius: 8,
-            padding: '10px 14px', fontSize: 13, color: colors.green,
+            background: 'var(--green-tint-bg)', border: '1px solid var(--green-tint-border)', borderRadius: 8,
+            padding: '10px 14px', fontSize: 13, color: 'var(--green)',
           }}>
             <span>✓</span>
-            <span><code style={{ color: '#86efac' }}>configuration.yaml</code> is correctly configured.</span>
+            <span><code style={{ color: 'var(--green)', fontFamily: 'var(--font-mono)' }}>configuration.yaml</code> is correctly configured.</span>
           </div>
         )}
 
         {haStatus?.status === 'subnet_missing' && (
           <>
             <div style={{
-              background: '#1c1a07', border: `1px solid #713f12`,
-              borderRadius: 8, padding: '10px 14px', fontSize: 13, color: colors.yellow,
+              background: 'var(--yellow-tint-bg)', border: '1px solid var(--yellow-tint-border)',
+              borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--yellow)',
             }}>
-              <code>configuration.yaml</code> has proxy settings but is missing this addon's subnet
-              (<code>{subnet}</code>) from <code>trusted_proxies</code>. HA will return 400 errors
+              <code style={{ fontFamily: 'var(--font-mono)' }}>configuration.yaml</code> has proxy settings but is missing this addon's subnet
+              (<code style={{ fontFamily: 'var(--font-mono)' }}>{subnet}</code>) from <code style={{ fontFamily: 'var(--font-mono)' }}>trusted_proxies</code>. HA will return 400 errors
               until it is added.
             </div>
             {applyError && (
               <div style={{
-                background: '#2d0a0a', border: `1px solid #7f1d1d`,
-                borderRadius: 8, padding: '10px 14px', fontSize: 13, color: colors.red,
+                background: 'var(--red-tint-bg)', border: '1px solid var(--red-tint-border)',
+                borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--red)',
               }}>
                 {applyError}
               </div>
@@ -312,21 +305,21 @@ function SettingsContent({
               onClick={applyHa}
               disabled={applying}
             >
-              {applying ? 'Writing…' : `⚡ Add ${subnet} to trusted_proxies`}
+              {applying ? 'Writing…' : `Add ${subnet} to trusted_proxies`}
             </button>
           </>
         )}
 
         {(haStatus?.status === 'not_configured' || haStatus?.status === 'no_file') && (
           <>
-            <p style={{ fontSize: 13, color: colors.muted, margin: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-dim)', margin: 0 }}>
               To expose Home Assistant through a tunnel, HA needs to trust this addon as a reverse proxy.
               Click below to add the required settings automatically.
             </p>
             {applyError && (
               <div style={{
-                background: '#2d0a0a', border: `1px solid #7f1d1d`,
-                borderRadius: 8, padding: '10px 14px', fontSize: 13, color: colors.red,
+                background: 'var(--red-tint-bg)', border: '1px solid var(--red-tint-border)',
+                borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--red)',
               }}>
                 {applyError}
               </div>
@@ -336,7 +329,7 @@ function SettingsContent({
               onClick={applyHa}
               disabled={applying}
             >
-              {applying ? 'Writing…' : '⚡ Apply to configuration.yaml'}
+              {applying ? 'Writing…' : 'Apply to configuration.yaml'}
             </button>
           </>
         )}
@@ -344,11 +337,11 @@ function SettingsContent({
         {haStatus?.status === 'has_http_section' && (
           <>
             <div style={{
-              background: '#1c1a07', border: `1px solid #713f12`,
-              borderRadius: 8, padding: '10px 14px', fontSize: 13, color: colors.yellow,
+              background: 'var(--yellow-tint-bg)', border: '1px solid var(--yellow-tint-border)',
+              borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--yellow)',
             }}>
-              Your <code>configuration.yaml</code> already has an <code>http:</code> section but is missing
-              the proxy settings. Add these lines to your existing <code>http:</code> block manually:
+              Your <code style={{ fontFamily: 'var(--font-mono)' }}>configuration.yaml</code> already has an <code style={{ fontFamily: 'var(--font-mono)' }}>http:</code> section but is missing
+              the proxy settings. Add these lines to your existing <code style={{ fontFamily: 'var(--font-mono)' }}>http:</code> block manually:
             </div>
             <code style={codeStyle}>{'  use_x_forwarded_for: true\n  trusted_proxies:\n    - ' + subnet}</code>
             <button style={copyBtn(copied)} onClick={() => copySnippet(yamlSnippet)}>
@@ -364,10 +357,10 @@ function SettingsContent({
 function copyBtn(copied: boolean): React.CSSProperties {
   return {
     padding: '4px 14px', borderRadius: 5,
-    border: `1px solid ${colors.border}`, cursor: 'pointer',
-    background: colors.surface, color: colors.muted, fontSize: 12,
-    alignSelf: 'flex-start',
-    ...(copied ? { color: colors.green, borderColor: '#166534' } : {}),
+    border: '1px solid var(--border)', cursor: 'pointer',
+    background: 'var(--surface)', color: 'var(--text-dim)', fontSize: 12,
+    alignSelf: 'flex-start', fontFamily: 'inherit',
+    ...(copied ? { color: 'var(--green)', borderColor: 'var(--green-tint-border)' } : {}),
   }
 }
 
@@ -389,49 +382,49 @@ function DocsContent() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 4 }}>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: colors.text }}>Exposing Home Assistant</div>
-        <p style={{ fontSize: 13, color: colors.muted, margin: 0, lineHeight: 1.6 }}>
+        <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>Exposing Home Assistant</div>
+        <p style={{ fontSize: 13, color: 'var(--text-dim)', margin: 0, lineHeight: 1.6 }}>
           When you create a tunnel pointing to Home Assistant (e.g.{' '}
-          <code style={{ color: colors.text }}>http://homeassistant.local.hass.io:8123</code>),
+          <code style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>http://homeassistant.local.hass.io:8123</code>),
           HA needs to trust this addon as a reverse proxy. Without this, HA returns{' '}
-          <code style={{ color: colors.red }}>400 Bad Request</code>.
+          <code style={{ color: 'var(--red)', fontFamily: 'var(--font-mono)' }}>400 Bad Request</code>.
         </p>
-        <p style={{ fontSize: 13, color: colors.muted, margin: 0, lineHeight: 1.6 }}>
-          Go to <strong style={{ color: colors.text }}>Settings → Home Assistant Proxy Settings</strong> above
-          and click <strong style={{ color: colors.text }}>Apply to configuration.yaml</strong> — or add this
-          to your <code style={{ color: colors.text }}>configuration.yaml</code> manually:
+        <p style={{ fontSize: 13, color: 'var(--text-dim)', margin: 0, lineHeight: 1.6 }}>
+          Go to <strong style={{ color: 'var(--text)' }}>Settings → Home Assistant Proxy Settings</strong> above
+          and click <strong style={{ color: 'var(--text)' }}>Apply to configuration.yaml</strong> — or add this
+          to your <code style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>configuration.yaml</code> manually:
         </p>
         <code style={codeStyle}>{haYaml}</code>
         <button style={copyBtn(copied === 'ha')} onClick={() => copy('ha', haYaml)}>
           {copied === 'ha' ? '✓ Copied!' : 'Copy'}
         </button>
-        <p style={{ fontSize: 13, color: colors.muted, margin: 0, lineHeight: 1.6 }}>
+        <p style={{ fontSize: 13, color: 'var(--text-dim)', margin: 0, lineHeight: 1.6 }}>
           After saving, restart Home Assistant core for the changes to take effect.
         </p>
       </div>
 
-      <div style={{ borderTop: `1px solid ${colors.border}` }} />
+      <div style={{ borderTop: '1px solid var(--border)' }} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: colors.text }}>SSO vs Open tunnels</div>
-        <p style={{ fontSize: 13, color: colors.muted, margin: 0, lineHeight: 1.6 }}>
-          <strong style={{ color: colors.text }}>SSO</strong> — visitors must log in via Google or GitHub
+        <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>SSO vs Open tunnels</div>
+        <p style={{ fontSize: 13, color: 'var(--text-dim)', margin: 0, lineHeight: 1.6 }}>
+          <strong style={{ color: 'var(--text)' }}>SSO</strong> — visitors must log in via Google or GitHub
           before accessing your service. You can restrict access to specific email addresses using
           Access Rules.
         </p>
-        <p style={{ fontSize: 13, color: colors.muted, margin: 0, lineHeight: 1.6 }}>
-          <strong style={{ color: colors.text }}>Open</strong> — no authentication. The service is
+        <p style={{ fontSize: 13, color: 'var(--text-dim)', margin: 0, lineHeight: 1.6 }}>
+          <strong style={{ color: 'var(--text)' }}>Open</strong> — no authentication. The service is
           publicly accessible via the tunnel URL. Use this for services with their own auth (e.g. HA itself).
         </p>
       </div>
 
-      <div style={{ borderTop: `1px solid ${colors.border}` }} />
+      <div style={{ borderTop: '1px solid var(--border)' }} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: colors.text }}>Self-signed certificates</div>
-        <p style={{ fontSize: 13, color: colors.muted, margin: 0, lineHeight: 1.6 }}>
+        <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>Self-signed certificates</div>
+        <p style={{ fontSize: 13, color: 'var(--text-dim)', margin: 0, lineHeight: 1.6 }}>
           If your local service uses HTTPS with a self-signed certificate (e.g. a NAS or router),
-          enable <strong style={{ color: colors.text }}>Skip SSL verification</strong> when adding the tunnel.
+          enable <strong style={{ color: 'var(--text)' }}>Skip SSL verification</strong> when adding the tunnel.
           The tunnel URL itself is always secured with a valid certificate.
         </p>
       </div>
@@ -456,19 +449,14 @@ export default function App() {
   const [haStatus, setHaStatus] = useState<HaSetupStatus | null>(null)
   const [restartNeeded, setRestartNeeded] = useState(false)
 
-  // Load config to determine if key is set
   useEffect(() => {
     getConfig().then(cfg => {
       setApiKeySet(cfg.api_key_set)
-      // Auto-open settings if no API key
       if (!cfg.api_key_set) setSettingsOpen(true)
     }).catch(() => { setApiKeySet(false); setSettingsOpen(true) })
 
     getHaSetupStatus().then(status => {
       setHaStatus(status)
-      // Only show restart banner if the backend confirms a pending restart
-      // (the sentinel file /data/restart_pending exists). This prevents
-      // stale banners after addon updates or HA restarts.
       setRestartNeeded(status.restart_pending)
     }).catch(() => null)
   }, [])
@@ -508,15 +496,20 @@ export default function App() {
   const noKey = apiKeySet === false
 
   return (
-    <div style={{ minHeight: '100vh', background: colors.bg, color: colors.text, fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh' }}>
       {/* Header */}
       <header style={{
-        padding: '16px 24px', background: '#161820',
-        borderBottom: `1px solid ${colors.border}`,
-        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '16px 24px', background: 'var(--bg-raised)',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', gap: 12,
       }}>
-        <span style={{ fontSize: 20 }}>🌐</span>
-        <span style={{ fontWeight: 700, fontSize: 17, letterSpacing: '-0.3px' }}>
+        <span style={{ color: 'var(--mint)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Logo size={26} />
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, letterSpacing: '-0.3px' }}>
+            HL<span style={{ color: '#ffd866' }}>E</span>
+          </span>
+        </span>
+        <span style={{ color: 'var(--text-dim)', fontSize: 14 }}>
           Home Lab Everywhere
         </span>
       </header>
@@ -533,7 +526,8 @@ export default function App() {
           onToggle={() => setSettingsOpen(o => !o)}
           badge={noKey ? (
             <span style={{
-              fontSize: 11, background: '#92400e', color: colors.amber,
+              fontSize: 11, background: 'var(--yellow-tint-bg)', color: 'var(--yellow)',
+              border: '1px solid var(--yellow-tint-border)',
               borderRadius: 4, padding: '1px 7px', fontWeight: 600,
             }}>API key required</span>
           ) : undefined}
@@ -555,14 +549,14 @@ export default function App() {
           onToggle={() => setTunnelsOpen(o => !o)}
           badge={tunnels.length > 0 ? (
             <span style={{
-              fontSize: 11, background: colors.surface, color: colors.faint,
-              border: `1px solid ${colors.border}`, borderRadius: 10, padding: '1px 8px',
+              fontSize: 11, background: 'var(--surface)', color: 'var(--text-xdim)',
+              border: '1px solid var(--border)', borderRadius: 10, padding: '1px 8px',
             }}>{tunnels.length}</span>
           ) : undefined}
         >
           {/* Add tunnel button + no-key warning */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-            <span style={{ fontSize: 13, color: colors.faint }}>
+            <span style={{ fontSize: 13, color: 'var(--text-xdim)' }}>
               {tunnels.length === 0 ? 'No tunnels yet.' : ''}
             </span>
             <button
@@ -576,13 +570,13 @@ export default function App() {
 
           {noKey && (
             <div style={{
-              background: '#422006', border: `1px solid #92400e`,
-              borderRadius: 8, padding: '10px 14px', fontSize: 13, color: colors.amber, lineHeight: 1.6,
+              background: 'var(--yellow-tint-bg)', border: '1px solid var(--yellow-tint-border)',
+              borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--yellow)', lineHeight: 1.6,
             }}>
               No API key configured.{' '}
               <button
                 onClick={() => setSettingsOpen(true)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.amber, fontWeight: 700, textDecoration: 'underline', fontSize: 13, padding: 0 }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--yellow)', fontWeight: 700, textDecoration: 'underline', fontSize: 13, padding: 0, fontFamily: 'inherit' }}
               >
                 Open Settings
               </button>
@@ -590,14 +584,14 @@ export default function App() {
             </div>
           )}
 
-          {loadError && <p style={{ color: colors.red, fontSize: 13 }}>{loadError}</p>}
+          {loadError && <p style={{ color: 'var(--red)', fontSize: 13 }}>{loadError}</p>}
 
           {tunnels.map(t => (
             <TunnelCard key={t.id} tunnel={t} onRefresh={loadTunnels} />
           ))}
 
           {/* Documentation sub-section */}
-          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
             <Section
               title="Documentation"
               open={docsOpen}

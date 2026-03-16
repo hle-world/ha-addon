@@ -1,4 +1,4 @@
-# Home Lab Everywhere — Home Assistant Add-on
+# HomeLab Everywhere — Home Assistant Add-on
 
 Expose Home Assistant and other homelab services to the internet via [HLE](https://hle.world) tunnels, with built-in SSO. Manage all your tunnels and access rules directly from the HA sidebar.
 
@@ -10,7 +10,7 @@ Or manually:
 
 1. Go to **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
 2. Add `https://github.com/hle-world/ha-addon`
-3. Install **Home Lab Everywhere**
+3. Install **HomeLab Everywhere**
 4. Get an API key at [hle.world/dashboard](https://hle.world/dashboard)
 5. Enter the key in the add-on **Settings** tab and start the add-on
 

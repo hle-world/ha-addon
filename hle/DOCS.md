@@ -1,4 +1,4 @@
-# Home Lab Everywhere — Add-on Documentation
+# HomeLab Everywhere — Add-on Documentation
 
 ## Setup
 

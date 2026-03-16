@@ -1,6 +1,6 @@
 ## 2026-02-25 00:00
 
-Initial scaffold: HA add-on for Home Lab Everywhere.
+Initial scaffold: HA add-on for HomeLab Everywhere.
 
 - Add-on manifest, Dockerfile, supervisord config
 - FastAPI backend: tunnel management via supervisord XML-RPC, HLE API proxy

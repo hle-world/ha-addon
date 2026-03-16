@@ -1,4 +1,4 @@
-# Home Lab Everywhere
+# HomeLab Everywhere
 
 Expose Home Assistant and other homelab services to the internet via [HLE](https://hle.world) tunnels, with built-in SSO protection.
 

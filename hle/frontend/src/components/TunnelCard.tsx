@@ -85,6 +85,7 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
   // Logs state
   const [logs, setLogs] = useState<string[] | null>(null)
   const logsRef = useRef<HTMLPreElement>(null)
+  const [autoScroll, setAutoScroll] = useState(true)
 
   // Auto-refresh logs when panel is open
   useEffect(() => {
@@ -99,12 +100,20 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
     return () => clearInterval(id)
   }, [panel, tunnel.id])
 
-  // Auto-scroll logs to bottom when new content arrives
+  // Auto-scroll logs to bottom when new content arrives (only if enabled)
   useEffect(() => {
-    if (logsRef.current) {
+    if (autoScroll && logsRef.current) {
       logsRef.current.scrollTop = logsRef.current.scrollHeight
     }
   }, [logs])
+
+  // Detect when user scrolls up (disable) or back to bottom (re-enable)
+  function handleLogsScroll() {
+    if (!logsRef.current) return
+    const el = logsRef.current
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20
+    setAutoScroll(atBottom)
+  }
 
   // Edit state (mirrors current tunnel values)
   const [editServiceUrl, setEditServiceUrl] = useState(tunnel.service_url)
@@ -186,7 +195,10 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
         if (rulesRes && rules === null) setRules(rulesRes)
       }
       if (p === 'share' && shareLinks === null) setShareLinks(await getShareLinks(sub))
-      if (p === 'logs') setLogs((await getTunnelLogs(tunnel.id)).lines)
+      if (p === 'logs') {
+        setAutoScroll(true)
+        setLogs((await getTunnelLogs(tunnel.id)).lines)
+      }
     } catch (e) { setError(String(e)) }
   }
 
@@ -764,6 +776,18 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={sectionTitle}>Tunnel Logs <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--text-xdim)' }}>(auto-refreshing)</span></span>
             <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                style={{ ...btn(autoScroll ? 'active' : 'ghost'), fontSize: 11 }}
+                onClick={() => {
+                  const next = !autoScroll
+                  setAutoScroll(next)
+                  if (next && logsRef.current) {
+                    logsRef.current.scrollTop = logsRef.current.scrollHeight
+                  }
+                }}
+              >
+                {autoScroll ? 'Auto-scroll: On' : 'Auto-scroll: Off'}
+              </button>
               <a
                 href={`./api/tunnels/${tunnel.id}/logs/download`}
                 download={`tunnel-${tunnel.id}.log`}
@@ -777,7 +801,7 @@ export function TunnelCard({ tunnel, onRefresh }: Props) {
               </button>
             </div>
           </div>
-          <pre ref={logsRef} style={{
+          <pre ref={logsRef} onScroll={handleLogsScroll} style={{
             background: 'var(--surface)', borderRadius: 6, padding: '10px 12px',
             fontSize: 11, color: 'var(--text-dim)', overflowX: 'auto', maxHeight: 280,
             overflowY: 'auto', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all',

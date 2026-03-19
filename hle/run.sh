@@ -14,6 +14,7 @@ if bashio::var.is_empty "${API_KEY}"; then
 fi
 
 export HLE_API_KEY="${API_KEY}"
+export HLE_DATA_DIR="/data"
 
 mkdir -p /data/logs
 

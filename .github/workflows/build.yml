@@ -9,28 +9,8 @@ env:
   IMAGE: ghcr.io/hle-world/ha-addon
 
 jobs:
-  # Build the React frontend once — pure JS, no architecture dependency.
-  # The dist/ artifact is reused by all arch build jobs.
-  frontend:
-    name: Build frontend
-    runs-on: arc-runner-ha-addon
-    container:
-      image: node:22-slim
-    steps:
-      - name: Install git
-        run: apt-get update && apt-get install -y git
-
-      - uses: actions/checkout@v6
-
-      - name: Build
-        working-directory: hle/frontend
-        run: npm ci && npm run build
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: frontend-dist
-          path: hle/frontend/dist/
-          retention-days: 1
+  # Frontend is pre-built by hle-webapp and committed to hle/static/ via sync-webapp.yml.
+  # No Node.js build step needed — the Docker image just COPYs hle/static/.
 
   # ARM builds run on ARC (native ARM). ARC Kubernetes container mode requires
   # a container: field, so we use buildah with --storage-driver vfs --isolation chroot.
@@ -39,7 +19,6 @@ jobs:
     runs-on: arc-runner-ha-addon
     container:
       image: debian:bookworm-slim
-    needs: frontend
     permissions:
       contents: read
       packages: write
@@ -59,11 +38,6 @@ jobs:
         run: apt-get update && apt-get install -y git buildah ca-certificates
 
       - uses: actions/checkout@v6
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: frontend-dist
-          path: hle/static/
 
       - name: Login to ghcr.io
         if: github.event_name != 'pull_request'
@@ -93,18 +67,12 @@ jobs:
   build-amd64:
     name: Build amd64
     runs-on: ubuntu-latest
-    needs: frontend
     permissions:
       contents: read
       packages: write
 
     steps:
       - uses: actions/checkout@v6
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: frontend-dist
-          path: hle/static/
 
       - name: Login to ghcr.io
         if: github.event_name != 'pull_request'

@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'hle/backend/**'
-      - 'hle/frontend/**'
+      - 'hle/static/**'
       - 'hle/Dockerfile'
       - '.github/workflows/test.yml'
   pull_request:
@@ -30,28 +30,6 @@ jobs:
 
       - name: Check formatting
         run: ruff format --check hle/backend/
-
-  check-frontend:
-    name: Check frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
-      - name: Install dependencies
-        working-directory: hle/frontend
-        run: npm ci
-
-      - name: TypeScript check
-        working-directory: hle/frontend
-        run: npx tsc --noEmit
-
-      - name: Build
-        working-directory: hle/frontend
-        run: npm run build
 
   security:
     name: Security scan

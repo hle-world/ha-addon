@@ -1,5 +1,4 @@
 node_modules/
-hle/frontend/dist/
 # hle/static/ is intentionally committed — pre-built ha-addon frontend from hle-webapp
 # Updated automatically via .github/workflows/sync-webapp.yml
 __pycache__/

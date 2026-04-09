@@ -1,6 +1,7 @@
 name: Sync Frontend from hle-webapp
 
-# Triggered by hle-webapp after it builds a new release.
+# Triggered by hle-webapp after it builds a new release (repository_dispatch)
+# or manually via workflow_dispatch for testing.
 # Downloads the pre-built ha-addon frontend artifact and opens a PR
 # updating hle/static/ — the Docker build just COPYs this directory.
 

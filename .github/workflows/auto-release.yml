@@ -36,8 +36,9 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           if [[ "$HEAD_REF" == sync/hle-client-v* ]]; then
-            # Client sync: version comes from the Dockerfile pin
-            VERSION=$(grep 'hle-client==' hle/Dockerfile | sed 's/.*hle-client==\([0-9][0-9.]*\).*/\1/')
+            # Client sync: version from Dockerfile pin + .0 patch suffix
+            CLIENT_VER=$(grep 'hle-client==' hle/Dockerfile | sed 's/.*hle-client==\([0-9][0-9.]*\).*/\1/')
+            VERSION="${CLIENT_VER}.0"
             echo "source=client-sync" >> "$GITHUB_OUTPUT"
           else
             # Addon-only: bump patch from config.yaml

@@ -1,6 +1,6 @@
 # HomeLab Everywhere — Home Assistant Add-on
 
-Expose Home Assistant and other homelab services to the internet via [HLE](https://hle.world) tunnels, with built-in SSO. Manage all your tunnels and access rules directly from the HA sidebar.
+Expose Home Assistant and other homelab services to the internet via [HLE](https://hle.world) tunnels, with built-in SSO. Create webhook endpoints, manage tunnels, and control access rules directly from the HA sidebar.
 
 ## Installation
 
@@ -22,4 +22,5 @@ For detailed setup with screenshots, see the [full guide on hle.world/docs](http
 - Add tunnels for any service on your homelab (by URL)
 - Manage SSO allow-lists per tunnel
 - Per-tunnel start/stop controls
+- Create webhook tunnels to receive callbacks from GitHub, Stripe, and other services
 - Live tunnel status in the HA sidebar panel

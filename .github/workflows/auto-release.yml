@@ -87,18 +87,7 @@ jobs:
             -f "client_payload[pr_number]=${PR_NUMBER}" \
             -f "client_payload[pr_url]=${PR_URL}"
 
-      - name: Notify hle-webapp of addon changes
-        if: steps.ver.outputs.source == 'addon-only'
-        env:
-          GH_TOKEN: ${{ secrets.HLE_PAT }}
-          VERSION: ${{ steps.ver.outputs.version }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: |
-          gh api repos/hle-world/hle-webapp/dispatches \
-            -f event_type=ha-addon-changes \
-            -f "client_payload[version]=${VERSION}" \
-            -f "client_payload[pr_title]=${PR_TITLE}" \
-            -f "client_payload[pr_number]=${PR_NUMBER}" \
-            -f "client_payload[pr_url]=${PR_URL}"
+      # The hle-webapp dispatch was removed alongside hle-webapp PR #42
+      # (rogue sync-hle-docker.yml) and hle-docker PR #71. hle-webapp is
+      # the source of truth for the frontend; ha-addon consumes via
+      # sync-frontend.yml, never the reverse.

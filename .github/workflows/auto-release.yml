@@ -7,8 +7,11 @@ name: Auto-release on PR merge
 # the new version before the image is available.
 #
 # Version logic:
-#   - sync/hle-client-v* PRs: version from Dockerfile hle-client== pin
-#   - All other PRs: bump patch digit from current config.yaml version
+#   Version is always <hle-client>.<patch>, derived from the hle-client pin
+#   in hle/Dockerfile (the source of truth):
+#     - If the pin's MAJOR.MINOR differs from the current config.yaml
+#       version, reset to <client>.0 (new patch series for a new client).
+#     - Otherwise bump the patch digit.
 #
 # Skip release: add [skip release] to the PR title
 
@@ -32,22 +35,24 @@ jobs:
 
       - name: Determine version
         id: ver
-        env:
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
-          if [[ "$HEAD_REF" == sync/hle-client-v* ]]; then
-            # Client sync: version from Dockerfile pin + .0 patch suffix
-            CLIENT_VER=$(grep 'hle-client==' hle/Dockerfile | sed 's/.*hle-client==\([0-9][0-9.]*\).*/\1/')
+          CLIENT_VER=$(grep -oE 'hle-client==[0-9][0-9.]*' hle/Dockerfile | head -1 | sed 's/hle-client==//')
+          if [ -z "$CLIENT_VER" ]; then
+            echo "::error::could not parse hle-client pin from hle/Dockerfile"
+            exit 1
+          fi
+
+          CURRENT=$(grep '^version:' hle/config.yaml | sed 's/.*"\(.*\)"/\1/')
+          CURRENT_MM=$(echo "$CURRENT" | cut -d. -f1-2)
+
+          if [ "$CLIENT_VER" != "$CURRENT_MM" ]; then
+            # New client MAJOR.MINOR — start a fresh patch series.
             VERSION="${CLIENT_VER}.0"
-            echo "source=client-sync" >> "$GITHUB_OUTPUT"
+            echo "source=client-bump" >> "$GITHUB_OUTPUT"
           else
-            # Addon-only: bump patch from config.yaml
-            CURRENT=$(grep '^version:' hle/config.yaml | sed 's/.*"\(.*\)"/\1/')
-            MAJOR=$(echo "$CURRENT" | cut -d. -f1)
-            MINOR=$(echo "$CURRENT" | cut -d. -f2)
             PATCH=$(echo "$CURRENT" | cut -d. -f3)
-            VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
-            echo "source=addon-only" >> "$GITHUB_OUTPUT"
+            VERSION="${CLIENT_VER}.$((PATCH + 1))"
+            echo "source=patch-bump" >> "$GITHUB_OUTPUT"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
@@ -61,8 +66,9 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          if [[ "$SOURCE" == "client-sync" ]]; then
-            NOTES="Synced to hle-client v${VERSION}. See [hle-client release notes](https://github.com/hle-world/hle-client/releases/tag/v${VERSION}) for details."
+          if [[ "$SOURCE" == "client-bump" ]]; then
+            CLIENT_VER="${VERSION%.*}"
+            NOTES="Bumped to hle-client v${CLIENT_VER}. See [hle-client release notes](https://github.com/hle-world/hle-client/releases/tag/v${CLIENT_VER}) for details."
           else
             NOTES="Addon update: ${PR_TITLE} (#${PR_NUMBER})"
           fi
@@ -72,7 +78,7 @@ jobs:
             --notes "$NOTES"
 
       - name: Notify hle-docker of addon changes
-        if: steps.ver.outputs.source == 'addon-only'
+        if: steps.ver.outputs.source == 'patch-bump'
         env:
           GH_TOKEN: ${{ secrets.HLE_PAT }}
           VERSION: ${{ steps.ver.outputs.version }}

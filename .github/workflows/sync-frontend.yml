@@ -13,6 +13,9 @@ on:
       version:
         description: "hle-webapp version to sync (e.g. 2604.1.0)"
         required: true
+      hle_client_version:
+        description: "hle-client version to pin in Dockerfile (optional)"
+        required: false
 
 permissions:
   contents: write
@@ -23,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ github.event.client_payload.version || github.event.inputs.version }}
+      CLIENT_VERSION: ${{ github.event.client_payload.hle_client_version || github.event.inputs.hle_client_version }}
     steps:
       - uses: actions/checkout@v6
 
@@ -37,12 +41,23 @@ jobs:
             "https://github.com/hle-world/hle-webapp/releases/download/v${VERSION}/hle-frontend-ha-addon-${VERSION}.tar.gz" \
             | tar -xz -C hle/static
 
+      - name: Bump hle-client pin in Dockerfile
+        if: env.CLIENT_VERSION != ''
+        run: |
+          CURRENT=$(grep -oE 'hle-client==[0-9][0-9.]*' hle/Dockerfile | head -1 | sed 's/hle-client==//')
+          if [ "$CURRENT" != "$CLIENT_VERSION" ]; then
+            sed -i "s|hle-client==[0-9][0-9.]*|hle-client==${CLIENT_VERSION}|g" hle/Dockerfile
+            echo "Bumped hle-client pin: $CURRENT -> $CLIENT_VERSION"
+          else
+            echo "hle-client pin already at $CLIENT_VERSION — no change."
+          fi
+
       - name: Open sync PR
         env:
           GH_TOKEN: ${{ secrets.HLE_PAT }}
         run: |
           if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard hle/static/)" ]; then
-            echo "No frontend changes -- skipping PR."
+            echo "No changes -- skipping PR."
             exit 0
           fi
 
@@ -50,10 +65,17 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "${BRANCH}"
-          git add hle/static/
-          git commit -m "chore: sync frontend from hle-webapp v${VERSION}"
+          git add hle/static/ hle/Dockerfile
+          if [ -n "$CLIENT_VERSION" ]; then
+            COMMIT_MSG="chore: sync from hle-webapp v${VERSION} (hle-client v${CLIENT_VERSION})"
+            BODY="Pre-built ha-addon frontend from hle-webapp v${VERSION}. hle-client pin bumped to v${CLIENT_VERSION}."
+          else
+            COMMIT_MSG="chore: sync frontend from hle-webapp v${VERSION}"
+            BODY="Pre-built ha-addon frontend from hle-webapp v${VERSION}."
+          fi
+          git commit -m "${COMMIT_MSG}"
           git push -u origin "${BRANCH}"
           gh pr create \
-            --title "chore: sync frontend from hle-webapp v${VERSION}" \
-            --body "Pre-built ha-addon frontend from hle-webapp v${VERSION}." \
+            --title "${COMMIT_MSG}" \
+            --body "${BODY}" \
             --base main

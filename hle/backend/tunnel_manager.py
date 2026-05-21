@@ -118,18 +118,9 @@ def _parse_status_line(cfg_id: str, line: str) -> None:
     if "Tunnel registered:" in line:
         _connected.add(cfg_id)
         _last_errors.pop(cfg_id, None)
-        # Extract subdomain from url= field (e.g. "url=https://ha-xxxx.hle.world")
-        if "url=https://" in line:
-            try:
-                url_part = line.split("url=https://", 1)[1].split()[0]
-                subdomain = url_part.split(".hle.world")[0]
-                if subdomain:
-                    tunnels = _load_all()
-                    if cfg_id in tunnels:
-                        tunnels[cfg_id].subdomain = subdomain
-                        _save_all(tunnels)
-            except (IndexError, ValueError):
-                pass
+        # Authoritative subdomain + zone_domain come from the relay /api/tunnels
+        # listing via _monitor_tunnel — log-line parsing can't distinguish a
+        # custom zone from the subdomain (e.g. "ha.pr.t00t.us") reliably.
     elif "Connection lost:" in line:
         _connected.discard(cfg_id)
         _last_errors[cfg_id] = line
@@ -163,10 +154,12 @@ async def _monitor_tunnel(cfg_id: str, service_url: str, label: str) -> None:
                 # wrong subdomain assignment when multiple tunnels shared a URL.
                 if t_label == label:
                     subdomain = t.get("subdomain") or t_label
+                    zone_domain = t.get("zone_domain")
                     if subdomain:
                         tunnels = _load_all()
                         if cfg_id in tunnels:
                             tunnels[cfg_id].subdomain = subdomain
+                            tunnels[cfg_id].zone_domain = zone_domain
                             _save_all(tunnels)
                         _connected.add(cfg_id)
                         return True
@@ -446,7 +439,11 @@ def _make_status(tunnel_id: str, cfg: TunnelConfig) -> TunnelStatus:
         state = "CONNECTING"
         error = _last_errors.get(tunnel_id)
 
-    public_url = f"https://{cfg.subdomain}.hle.world" if cfg.subdomain else None
+    public_url = (
+        f"https://{cfg.subdomain}.{cfg.zone_domain or 'hle.world'}"
+        if cfg.subdomain
+        else None
+    )
     return TunnelStatus(
         **cfg.model_dump(),
         state=state,

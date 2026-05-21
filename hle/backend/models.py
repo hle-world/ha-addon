@@ -22,6 +22,7 @@ class TunnelConfig(BaseModel):
     forward_host: bool = False  # forward browser's Host header to local service
     response_timeout: Optional[int] = None  # server-side response timeout in seconds
     subdomain: Optional[str] = None  # populated once tunnel connects to relay
+    zone_domain: Optional[str] = None  # relay-authoritative zone (e.g. "hle.world" or custom)
     stopped: bool = False  # persisted: user explicitly stopped this tunnel
 
 

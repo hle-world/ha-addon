@@ -61,6 +61,10 @@ jobs:
             fi
             mv "$tmp/$f" "hle/backend/$f"
           done
+          # hle-webapp and ha-addon don't share the same ruff format config,
+          # so re-format the synced files to match this repo's lint rules.
+          pip install --quiet ruff
+          ruff format hle/backend/models.py hle/backend/tunnel_manager.py hle/backend/hle_api.py
 
       - name: Bump hle-client pin in Dockerfile
         if: env.CLIENT_VERSION != ''

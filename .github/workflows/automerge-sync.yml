@@ -17,9 +17,16 @@ permissions:
 
 jobs:
   automerge:
+    # head_repository guard is a SECURITY control, not a convenience: without
+    # it, anyone could fork the repo, open a PR from a branch named
+    # chore/sync-webapp-*, make CI pass (they control the code), and this job —
+    # which runs with repo write + HLE_PAT — would merge their code into main.
+    # Our own sync-frontend.yml always pushes the branch to origin, so legit
+    # sync PRs are always same-repo; fork PRs have a different head_repository.
     if: >
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       startsWith(github.event.workflow_run.head_branch, 'chore/sync-webapp-')
     runs-on: ubuntu-latest
     steps:

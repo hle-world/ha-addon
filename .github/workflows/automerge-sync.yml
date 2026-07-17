@@ -1,0 +1,38 @@
+name: Auto-merge sync PRs
+
+# sync-frontend.yml opens a `chore/sync-webapp-*` PR but never merges it, so it
+# sat open until merged by hand. Native `gh pr merge --auto` can't be used
+# (main has no required status checks, so enablePullRequestAutoMerge is
+# rejected). Instead, when the Test workflow finishes successfully for such a
+# PR, squash-merge it. Merging emits the pull_request:closed event that the
+# Auto-release workflow listens for.
+
+on:
+  workflow_run:
+    workflows: ["Test"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  automerge:
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'chore/sync-webapp-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge the green sync PR
+        env:
+          GH_TOKEN: ${{ secrets.HLE_PAT }}
+          REPO: ${{ github.repository }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          PR=$(gh pr list -R "$REPO" --head "$HEAD_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$PR" ]; then
+            echo "No open PR for ${HEAD_BRANCH} — nothing to merge."
+            exit 0
+          fi
+          echo "Merging PR #${PR} (${HEAD_BRANCH})"
+          gh pr merge "$PR" -R "$REPO" --squash --delete-branch

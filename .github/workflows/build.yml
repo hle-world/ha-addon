@@ -127,9 +127,10 @@ jobs:
 
   # Bump config.yaml AFTER the image is confirmed pushed. This ensures config.yaml
   # version matches the available Docker image before HA Supervisor can see it.
-  # The release intentionally stays as a pre-release so you can test on HA with
-  # "Show beta versions" enabled. Promote to full release manually in GitHub UI
-  # when testing is complete — HA Supervisor will then offer it to all users.
+  # Then promote the pre-release to a full release automatically (last step), so
+  # HA Supervisor offers it to all users without "Show beta versions". The
+  # pre-release window only exists between auto-release cutting it and this job
+  # finishing the build — the image is always ready before it goes full.
   publish:
     name: Bump config version
     runs-on: ubuntu-latest
@@ -158,3 +159,18 @@ jobs:
           # No-op if version was already set (e.g. re-running the workflow).
           git diff --staged --quiet || git commit -m "Bump version to ${VERSION} [skip ci]"
           git push
+
+      # The image is built + pushed and config.yaml matches it, so it is safe to
+      # promote the pre-release to a full release now — HA Supervisor then offers
+      # it to all users without needing "Show beta versions". Editing to a full
+      # release fires `release: released` (not `prereleased`), so this does not
+      # re-trigger this build workflow.
+      - name: Promote release to full
+        env:
+          GH_TOKEN: ${{ secrets.HLE_PAT }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease=false \
+            --latest

@@ -1,10 +1,37 @@
 # HomeLab Everywhere — Add-on Documentation
 
+The add-on runs in one of two modes.
+
+| Mode | Where you manage tunnels | Set up by |
+|------|--------------------------|-----------|
+| **Add-on mode** (default) | The HLE panel in the HA sidebar | Entering an API key |
+| **Agent mode** | The [hle.world dashboard](https://hle.world/dashboard) | Entering an agent token |
+
+Use agent mode if you want every tunnel on this machine — and on any other
+homelab machines — managed from one place. Use add-on mode if you'd rather keep
+everything inside Home Assistant.
+
 ## Setup
 
 1. Open the **HLE** panel in the HA sidebar
 2. Go to **Settings** and enter your API key from [hle.world/dashboard](https://hle.world/dashboard)
 3. Click **Save**
+
+## Setup — Agent Mode
+
+In agent mode this add-on runs the HLE agent instead of the local backend, so
+**the HLE panel is not served** — you add, edit, and remove endpoints in the
+dashboard and the agent converges within seconds, with no restart.
+
+1. In the [dashboard](https://hle.world/dashboard), go to **Agents → New Agent**
+2. Copy the `hlea_…` token — it is shown only once
+3. In the add-on's **Configuration** tab, paste it into **agent_token** and save
+4. Restart the add-on
+
+To go back to add-on mode, clear **agent_token** and restart.
+
+When adding endpoints for Home Assistant itself, point them at
+`http://homeassistant:8123` and apply the `trusted_proxies` prerequisite below.
 
 ## Exposing Home Assistant
 

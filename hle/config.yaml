@@ -18,6 +18,14 @@ ingress_port: 8099
 panel_icon: mdi:tunnel
 panel_title: HLE
 
+# The API key is managed in the HLE panel, not here — see run.sh. The only
+# option is the agent token, because agent mode has no local UI: endpoints are
+# declared in the hle.world dashboard instead.
+options:
+  agent_token: ""
+schema:
+  agent_token: "password?"
+
 map:
   - data
   - config:rw

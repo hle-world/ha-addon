@@ -1,0 +1,14 @@
+# docs-guard config for ha-addon. The tool and the shared retired-claims list
+# live in hle-world/hle-client (.github/actions/docs-guard/).
+
+[claims]
+# User-facing text only: the READMEs, the add-on store page and the startup
+# script's messages. Not backend/ (synced from hle-webapp, legacy names are
+# legitimate there) and not CHANGELOG.md (history).
+include = ["README.md", "hle/README.md", "hle/DOCS.md", "hle/run.sh"]
+
+[[impact]]
+name = "Add-on options"
+paths = ["hle/config.yaml", "hle/run.sh"]
+docs = ["hle/DOCS.md"]
+note = "The Configuration section of hle/DOCS.md lists every option in config.yaml (options and schema) and how run.sh uses it."

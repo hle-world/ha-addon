@@ -23,8 +23,8 @@ In agent mode this add-on runs the HLE agent instead of the local backend, so
 **the HLE panel is not served** — you add, edit, and remove endpoints in the
 dashboard and the agent converges within seconds, with no restart.
 
-1. In the [dashboard](https://hle.world/dashboard), go to **Agents → New Agent**
-2. Copy the `hlea_…` token — it is shown only once
+1. In the [dashboard](https://hle.world/dashboard/connections/agents), go to **Connections → Agents → New**
+2. Copy the `hle_…` key (a tunnel-scoped key, `hle_` + 32 hex) — it is shown only once in the New Agent dialog. Older `hlea_…` agent tokens keep working; no one needs to re-enrol. <!-- docs-guard: allow hlea-agent-token -->
 3. In the add-on's **Configuration** tab, paste it into **agent_token** and save
 4. Restart the add-on
 

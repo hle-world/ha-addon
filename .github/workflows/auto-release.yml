@@ -13,7 +13,15 @@ name: Auto-release on PR merge
 #       version, reset to <client>.0 (new patch series for a new client).
 #     - Otherwise bump the patch digit.
 #
-# Skip release: add [skip release] to the PR title
+# Skip release: three independent opt-outs, any one of which skips the release:
+#   1. Title marker: add [skip release] to the PR title.
+#   2. Label: add the `no-release` label to the PR.
+#   3. Path rule: if every changed file is one that cannot change what users
+#      receive (see the `scope` step's case patterns — .github/**, docs-guard.toml,
+#      .gitignore, CHANGELOG.md, SECURITY.md, README.md), no release is cut.
+#      Everything under hle/ still releases, including hle/DOCS.md and
+#      hle/README.md: Home Assistant shows those on the add-on page from the
+#      installed version, so a docs fix only reaches users through a release.
 
 on:
   pull_request:
@@ -25,16 +33,36 @@ jobs:
     name: Create pre-release
     if: >-
       github.event.pull_request.merged == true &&
-      !contains(github.event.pull_request.title, '[skip release]')
+      !contains(github.event.pull_request.title, '[skip release]') &&
+      !contains(github.event.pull_request.labels.*.name, 'no-release')
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: read
 
     steps:
       - uses: actions/checkout@v6
 
+      - name: Does this PR change anything that ships?
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          release=false
+          while IFS= read -r f; do
+            case "$f" in
+              .github/*|docs-guard.toml|.gitignore|CHANGELOG.md|SECURITY.md|README.md) ;;
+              *) release=true ;;
+            esac
+          done < <(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate -q '.[].filename')
+          echo "release=${release}" >> "$GITHUB_OUTPUT"
+          echo "Release needed: ${release}"
+
       - name: Determine version
         id: ver
+        if: steps.scope.outputs.release == 'true'
         run: |
           CLIENT_VER=$(grep -oE 'hle-client==[0-9][0-9.]*' hle/Dockerfile | head -1 | sed 's/hle-client==//')
           if [ -z "$CLIENT_VER" ]; then
@@ -57,6 +85,7 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Create pre-release
+        if: steps.scope.outputs.release == 'true'
         env:
           # Must use a PAT — GITHUB_TOKEN-created releases do not cascade
           # to trigger other workflows (GitHub anti-loop protection).
@@ -78,7 +107,7 @@ jobs:
             --notes "$NOTES"
 
       - name: Notify hle-docker of addon changes
-        if: steps.ver.outputs.source == 'patch-bump'
+        if: steps.scope.outputs.release == 'true' && steps.ver.outputs.source == 'patch-bump'
         env:
           GH_TOKEN: ${{ secrets.HLE_PAT }}
           VERSION: ${{ steps.ver.outputs.version }}

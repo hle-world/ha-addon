@@ -69,6 +69,12 @@ Click **Access Rules** on any running tunnel to manage the allow-list.
 | RUNNING  | Process is running and connecting/connected to the relay |
 | STOPPED  | Manually stopped or not yet started |
 
+## Security
+
+The HLE panel is only reachable through Home Assistant ingress, so only users
+signed in to Home Assistant can open it. The add-on refuses connections from
+any other address, including other add-ons on the same host.
+
 ## Logs
 
 Full per-tunnel logs are available at **Settings → Add-on → Log** in HA, or in

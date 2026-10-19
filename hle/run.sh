@@ -43,4 +43,7 @@ fi
 export HLE_API_KEY="${API_KEY}"
 
 bashio::log.info "Starting HLE backend..."
-exec python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8099 --app-dir /app
+# Listens on the hassio network because ingress connects over it; the backend
+# refuses every peer except the Supervisor's ingress proxy. Proxy headers are
+# ignored so a forwarded-for header cannot impersonate that address.
+exec python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8099 --app-dir /app --no-proxy-headers

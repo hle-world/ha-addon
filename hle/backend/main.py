@@ -10,10 +10,11 @@ import socket
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Annotated
 
 import httpx
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles  # noqa: F401 — used in conditional mount below
 
 from backend import hle_api
@@ -60,6 +61,22 @@ SUPERVISOR_API = "http://supervisor"
 HA_HOST = "homeassistant.local.hass.io"
 HA_PORT = 8123
 
+# The Supervisor's ingress proxy. Home Assistant's add-on guidance is that an
+# ingress add-on accepts connections from this address only: the panel is
+# reached through ingress, which has already checked the HA session. Any other
+# container on the hassio network is refused. Loopback stays open for the
+# add-on's own processes.
+INGRESS_PROXY_IP = "172.30.32.2"
+_ALLOWED_PEERS = frozenset({INGRESS_PROXY_IP, "127.0.0.1", "::1"})
+
+
+@app.middleware("http")
+async def _ingress_only(request: Request, call_next):
+    peer = request.client.host if request.client else ""
+    if peer not in _ALLOWED_PEERS:
+        return JSONResponse({"detail": "Forbidden"}, status_code=403)
+    return await call_next(request)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -71,6 +88,20 @@ def _require_api_key() -> None:
         raise HTTPException(
             status_code=400, detail="API key not configured. Set it in Settings first."
         )
+
+
+def _managed_subdomain(subdomain: str) -> str:
+    """Only proxy relay calls for tunnels this add-on manages.
+
+    The relay calls below use the account's global key, which can reach every
+    tunnel on the account; this keeps them scoped to the local tunnels.
+    """
+    if not any(t.subdomain == subdomain for t in tm.list_tunnels()):
+        raise HTTPException(status_code=404, detail="Tunnel not found")
+    return subdomain
+
+
+ManagedSubdomain = Annotated[str, Depends(_managed_subdomain)]
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +299,7 @@ async def get_tunnel_favicon(tunnel_id: str):
 
 
 @app.get("/api/tunnels/{subdomain}/access")
-async def list_access_rules(subdomain: str):
+async def list_access_rules(subdomain: ManagedSubdomain):
     try:
         return await hle_api.list_access_rules(subdomain)
     except httpx.HTTPStatusError as exc:
@@ -278,7 +309,7 @@ async def list_access_rules(subdomain: str):
 
 
 @app.post("/api/tunnels/{subdomain}/access", status_code=201)
-async def add_access_rule(subdomain: str, req: AddAccessRuleRequest):
+async def add_access_rule(subdomain: ManagedSubdomain, req: AddAccessRuleRequest):
     try:
         return await hle_api.add_access_rule(subdomain, req.email, req.provider)
     except httpx.HTTPStatusError as exc:
@@ -288,7 +319,7 @@ async def add_access_rule(subdomain: str, req: AddAccessRuleRequest):
 
 
 @app.delete("/api/tunnels/{subdomain}/access/{rule_id}", status_code=204)
-async def delete_access_rule(subdomain: str, rule_id: int):
+async def delete_access_rule(subdomain: ManagedSubdomain, rule_id: int):
     try:
         await hle_api.delete_access_rule(subdomain, rule_id)
     except httpx.HTTPStatusError as exc:
@@ -303,7 +334,7 @@ async def delete_access_rule(subdomain: str, rule_id: int):
 
 
 @app.get("/api/tunnels/{subdomain}/pin")
-async def get_pin_status(subdomain: str):
+async def get_pin_status(subdomain: ManagedSubdomain):
     try:
         return await hle_api.get_pin_status(subdomain)
     except httpx.HTTPStatusError as exc:
@@ -313,7 +344,7 @@ async def get_pin_status(subdomain: str):
 
 
 @app.put("/api/tunnels/{subdomain}/pin", status_code=204)
-async def set_pin(subdomain: str, req: SetPinRequest):
+async def set_pin(subdomain: ManagedSubdomain, req: SetPinRequest):
     try:
         await hle_api.set_pin(subdomain, req.pin)
     except httpx.HTTPStatusError as exc:
@@ -323,7 +354,7 @@ async def set_pin(subdomain: str, req: SetPinRequest):
 
 
 @app.delete("/api/tunnels/{subdomain}/pin", status_code=204)
-async def remove_pin(subdomain: str):
+async def remove_pin(subdomain: ManagedSubdomain):
     try:
         await hle_api.remove_pin(subdomain)
     except httpx.HTTPStatusError as exc:
@@ -338,7 +369,7 @@ async def remove_pin(subdomain: str):
 
 
 @app.get("/api/tunnels/{subdomain}/basic-auth")
-async def get_basic_auth_status(subdomain: str):
+async def get_basic_auth_status(subdomain: ManagedSubdomain):
     try:
         return await hle_api.get_basic_auth_status(subdomain)
     except httpx.HTTPStatusError as exc:
@@ -348,7 +379,7 @@ async def get_basic_auth_status(subdomain: str):
 
 
 @app.put("/api/tunnels/{subdomain}/basic-auth", status_code=204)
-async def set_basic_auth(subdomain: str, req: SetBasicAuthRequest):
+async def set_basic_auth(subdomain: ManagedSubdomain, req: SetBasicAuthRequest):
     try:
         await hle_api.set_basic_auth(subdomain, req.username, req.password)
     except httpx.HTTPStatusError as exc:
@@ -358,7 +389,7 @@ async def set_basic_auth(subdomain: str, req: SetBasicAuthRequest):
 
 
 @app.delete("/api/tunnels/{subdomain}/basic-auth", status_code=204)
-async def remove_basic_auth(subdomain: str):
+async def remove_basic_auth(subdomain: ManagedSubdomain):
     try:
         await hle_api.remove_basic_auth(subdomain)
     except httpx.HTTPStatusError as exc:
@@ -373,7 +404,7 @@ async def remove_basic_auth(subdomain: str):
 
 
 @app.get("/api/tunnels/{subdomain}/share")
-async def list_share_links(subdomain: str):
+async def list_share_links(subdomain: ManagedSubdomain):
     try:
         return await hle_api.list_share_links(subdomain)
     except httpx.HTTPStatusError as exc:
@@ -383,7 +414,7 @@ async def list_share_links(subdomain: str):
 
 
 @app.post("/api/tunnels/{subdomain}/share", status_code=201)
-async def create_share_link(subdomain: str, req: CreateShareLinkRequest):
+async def create_share_link(subdomain: ManagedSubdomain, req: CreateShareLinkRequest):
     try:
         return await hle_api.create_share_link(
             subdomain, req.duration, req.label, req.max_uses
@@ -395,7 +426,7 @@ async def create_share_link(subdomain: str, req: CreateShareLinkRequest):
 
 
 @app.delete("/api/tunnels/{subdomain}/share/{link_id}", status_code=204)
-async def delete_share_link(subdomain: str, link_id: int):
+async def delete_share_link(subdomain: ManagedSubdomain, link_id: int):
     try:
         await hle_api.delete_share_link(subdomain, link_id)
     except httpx.HTTPStatusError as exc:

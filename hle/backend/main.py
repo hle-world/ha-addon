@@ -44,6 +44,12 @@ async def lifespan(app: FastAPI):
                 os.environ["HLE_API_KEY"] = api_key
         except Exception:
             pass
+    try:
+        # Best effort: a read-only or unreadable config folder must never keep
+        # the add-on (and its tunnels) from starting.
+        _refresh_trusted_proxy()
+    except Exception:  # nosec B110
+        pass
     await tm.restore_all()
     yield
     await tm.shutdown_all()
@@ -52,7 +58,21 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 HLE_CONFIG = Path("/data/hle_config.json")  # our own file, not managed by HA Supervisor
-HA_CONFIG = Path("/config/configuration.yaml")
+
+
+def _ha_config_path() -> Path:
+    """Path to Home Assistant's configuration.yaml.
+
+    The `homeassistant_config` map mounts the HA config folder at /homeassistant
+    (the deprecated `config` map used /config), so accept whichever is present.
+    """
+    for parent in (Path("/homeassistant"), Path("/config")):
+        if (parent / "configuration.yaml").exists():
+            return parent / "configuration.yaml"
+    return Path("/homeassistant/configuration.yaml")
+
+
+HA_CONFIG = _ha_config_path()
 RESTART_NEEDED = Path(
     "/tmp/restart_needed"  # nosec B108 — intentional use of /tmp in addon container
 )  # sentinel: created on config apply, auto-cleared when config is confirmed
@@ -444,16 +464,122 @@ async def delete_share_link(subdomain: ManagedSubdomain, link_id: int):
 # ---------------------------------------------------------------------------
 
 
-def _detect_subnet() -> str:
-    """Return the /23 subnet this addon uses to reach HA (e.g. '172.30.32.0/23')."""
+# Older versions trusted the whole hassio /23, which let any other add-on on
+# that network spoof X-Forwarded-For. Only the add-on's own address may be
+# trusted. Entries this add-on writes carry a marker so they can be refreshed
+# when the container's IP changes.
+_LEGACY_TRUSTED_PROXY = "172.30.32.0/23"
+_HLE_PROXY_MARKER = "# Added by HLE addon"
+# Older versions that created the whole `http:` block wrote this comment above
+# it and left the single trusted_proxies entry unmarked.
+_LEGACY_BLOCK_HEADER = "# Added by HLE addon —"
+
+
+def _detect_trusted_proxy() -> str | None:
+    """Return this add-on's own address as a single-host network.
+
+    For IPv4 that is e.g. '172.30.32.5/32'.  Trusting only this address stops
+    other add-ons on the hassio network from spoofing proxy headers.  Returns
+    None when the address cannot be determined.
+    """
     try:
         with socket.create_connection(
             ("homeassistant.local.hass.io", 8123), timeout=2
         ) as s:
-            addon_ip = s.getsockname()[0]
-        return str(ipaddress.ip_network(f"{addon_ip}/23", strict=False))
+            addon_ip = ipaddress.ip_address(s.getsockname()[0])
+        return f"{addon_ip}/{addon_ip.max_prefixlen}"
     except Exception:
-        return "172.30.32.0/23"
+        return None
+
+
+def _trusted_proxy_bounds(lines: list[str]) -> tuple[int, int] | None:
+    """Return the line range holding the trusted_proxies list entries."""
+    for i, line in enumerate(lines):
+        if re.match(r"[ \t]*trusted_proxies\s*:", line):
+            end = len(lines)
+            for j in range(i + 1, len(lines)):
+                stripped = lines[j].strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if stripped.startswith("-"):
+                    continue
+                end = j
+                break
+            return i + 1, end
+    return None
+
+
+def _rewrite_trusted_proxies(text: str, current: str) -> str:
+    """Replace add-on-managed trusted_proxies entries with ``current``.
+
+    An entry counts as add-on-written only if it carries the
+    "Added by HLE addon" marker, or is the first, unmarked entry of the block
+    older versions created whole (recognised by its "Added by HLE addon —"
+    header comment).  Any other entry, including a hand-written
+    ``172.30.32.0/23`` that other proxy add-ons rely on, is never touched.
+    """
+    lines = text.splitlines(keepends=True)
+    bounds = _trusted_proxy_bounds(lines)
+    if bounds is None:
+        return text
+    start, end = bounds
+    kept: list[str] = []
+    replaced = False
+    found_managed = False
+    first_entry = True
+    legacy_block = _LEGACY_BLOCK_HEADER in text
+    for line in lines[start:end]:
+        match = re.match(r"([ \t]*)-\s+(\S+)(.*)$", line)
+        managed = match is not None and (
+            _HLE_PROXY_MARKER in match.group(3)
+            or (first_entry and legacy_block and match.group(2).endswith("/23"))
+        )
+        if match is not None:
+            first_entry = False
+        if not managed:
+            kept.append(line)
+            continue
+        found_managed = True
+        if match.group(2) == current:
+            kept.append(line)
+            replaced = True
+        elif not replaced:
+            kept.append(f"{match.group(1)}- {current}  {_HLE_PROXY_MARKER}\n")
+            replaced = True
+    if not found_managed:
+        return text
+    return "".join(lines[:start] + kept + lines[end:])
+
+
+def _refresh_trusted_proxy() -> None:
+    """Refresh the managed trusted_proxies entry on add-on start.
+
+    The add-on's container IP can change between restarts, so an old address
+    must not stay trusted.  HA still needs a restart to pick up the change, so
+    the restart sentinel is set when the file is modified.
+    """
+    if not HA_CONFIG.exists():
+        return
+    current = _detect_trusted_proxy()
+    if not current:
+        return
+    text = HA_CONFIG.read_text(errors="replace")
+    if "use_x_forwarded_for" not in text:
+        return
+    updated = _rewrite_trusted_proxies(text, current)
+    if re.search(
+        rf"^[ \t]*-\s+{re.escape(_LEGACY_TRUSTED_PROXY)}\s*$", updated, re.MULTILINE
+    ):
+        print(
+            f"[hle] WARNING: configuration.yaml trusts {_LEGACY_TRUSTED_PROXY} "
+            "as a reverse proxy; consider narrowing it, since every add-on on "
+            "that network can then spoof X-Forwarded-For.",
+            flush=True,
+        )
+    if updated == text:
+        return
+    HA_CONFIG.write_text(updated)
+    RESTART_NEEDED.write_text("1")
 
 
 def _sentinel_stale() -> bool:
@@ -483,8 +609,8 @@ async def ha_setup_status():
     if not HA_CONFIG.exists():
         return {"status": "no_file", "restart_pending": restart_needed}
     text = HA_CONFIG.read_text(errors="replace")
-    subnet = _detect_subnet()
-    if "use_x_forwarded_for" in text:
+    subnet = _detect_trusted_proxy()
+    if subnet and "use_x_forwarded_for" in text:
         if subnet in text:
             # Config looks correct.  If the sentinel is old enough, assume
             # the restart has already happened and auto-clear.
@@ -515,48 +641,57 @@ async def ha_setup_apply():
     """Append the http proxy block (or just the missing subnet) to configuration.yaml."""
     if not HA_CONFIG.exists():
         raise HTTPException(
-            status_code=404, detail="configuration.yaml not found at /config/"
+            status_code=404,
+            detail=f"configuration.yaml not found at {HA_CONFIG.parent}/",
         )
     text = HA_CONFIG.read_text(errors="replace")
-    subnet = _detect_subnet()
+    subnet = _detect_trusted_proxy()
+    if not subnet:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not determine the add-on's IP address. Please add it manually.",
+        )
 
     if "use_x_forwarded_for" in text:
         if subnet in text:
             return {"status": "already_configured", "subnet": subnet}
-        # http block exists with use_x_forwarded_for but our subnet is missing —
-        # insert the subnet after the last entry under trusted_proxies.
-        lines = text.splitlines(keepends=True)
-        tp_idx = next(
-            (
-                i
-                for i, line in enumerate(lines)
-                if re.match(r"[ \t]*trusted_proxies\s*:", line)
-            ),
-            None,
-        )
-        if tp_idx is None:
-            raise HTTPException(
-                status_code=409,
-                detail="Could not locate trusted_proxies key in configuration.yaml. Please add the subnet manually.",
+        # Replace any stale entry this add-on wrote (including the historical
+        # /23), then insert our address if it is still missing.
+        text = _rewrite_trusted_proxies(text, subnet)
+        if subnet not in text:
+            lines = text.splitlines(keepends=True)
+            tp_idx = next(
+                (
+                    i
+                    for i, line in enumerate(lines)
+                    if re.match(r"[ \t]*trusted_proxies\s*:", line)
+                ),
+                None,
             )
-        # Detect indentation from the first existing list entry under trusted_proxies.
-        entry_indent = "    "
-        for i in range(tp_idx + 1, min(tp_idx + 10, len(lines))):
-            m = re.match(r"([ \t]*)-\s+", lines[i])
-            if m:
-                entry_indent = m.group(1)
-                break
-        # Find the last list entry that belongs to this trusted_proxies block.
-        last_entry_idx = tp_idx
-        for i in range(tp_idx + 1, len(lines)):
-            stripped = lines[i].strip()
-            if re.match(r"-\s+", stripped):
-                last_entry_idx = i
-            elif stripped and not stripped.startswith("#"):
-                break  # reached the next YAML key — stop
-        new_line = f"{entry_indent}- {subnet}  # Added by HLE addon\n"
-        lines.insert(last_entry_idx + 1, new_line)
-        HA_CONFIG.write_text("".join(lines))
+            if tp_idx is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Could not locate trusted_proxies key in configuration.yaml. Please add the address manually.",
+                )
+            # Detect indentation from the first existing list entry under trusted_proxies.
+            entry_indent = "    "
+            for i in range(tp_idx + 1, min(tp_idx + 10, len(lines))):
+                m = re.match(r"([ \t]*)-\s+", lines[i])
+                if m:
+                    entry_indent = m.group(1)
+                    break
+            # Find the last list entry that belongs to this trusted_proxies block.
+            last_entry_idx = tp_idx
+            for i in range(tp_idx + 1, len(lines)):
+                stripped = lines[i].strip()
+                if re.match(r"-\s+", stripped):
+                    last_entry_idx = i
+                elif stripped and not stripped.startswith("#"):
+                    break  # reached the next YAML key — stop
+            new_line = f"{entry_indent}- {subnet}  {_HLE_PROXY_MARKER}\n"
+            lines.insert(last_entry_idx + 1, new_line)
+            text = "".join(lines)
+        HA_CONFIG.write_text(text)
         RESTART_NEEDED.write_text("1")
         return {"status": "applied", "subnet": subnet}
 
@@ -575,7 +710,7 @@ async def ha_setup_apply():
         "http:\n"
         "  use_x_forwarded_for: true\n"
         "  trusted_proxies:\n"
-        f"    - {subnet}\n"
+        f"    - {subnet}  {_HLE_PROXY_MARKER}\n"
     )
     HA_CONFIG.write_text(text + block)
     RESTART_NEEDED.write_text("1")
@@ -629,21 +764,10 @@ async def ha_ping():
 
 @app.get("/api/network-info")
 async def get_network_info():
-    """Return the addon container's IP and the trusted_proxies subnet for HA config."""
-    addon_ip: str | None = None
-    subnet: str | None = None
-    try:
-        # Connect toward HA so the OS picks the right source interface.
-        with socket.create_connection(
-            ("homeassistant.local.hass.io", 8123), timeout=2
-        ) as s:
-            addon_ip = s.getsockname()[0]
-        # HA Supervisor always allocates addon IPs inside a /23 block.
-        net = ipaddress.ip_network(f"{addon_ip}/23", strict=False)
-        subnet = str(net)
-    except Exception:
-        pass
-    return {"addon_ip": addon_ip, "trusted_subnet": subnet}
+    """Return the add-on's IP and the trusted_proxies entry for HA config."""
+    trusted = _detect_trusted_proxy()
+    addon_ip = trusted.rsplit("/", 1)[0] if trusted else None
+    return {"addon_ip": addon_ip, "trusted_subnet": trusted}
 
 
 @app.get("/api/config")

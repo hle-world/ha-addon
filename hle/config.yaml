@@ -26,11 +26,16 @@ options:
 schema:
   agent_token: "password?"
 
+# `homeassistant_config:rw` mounts Home Assistant's configuration folder
+# (at /homeassistant) so the add-on can read and append the proxy snippet to
+# configuration.yaml. The `data` map stays read-write for tunnels.json and logs.
 map:
   - data
-  - config:rw
+  - homeassistant_config:rw
 
+# `homeassistant` is the least role that can call /core/restart; it cannot
+# manage other add-ons, unlike the previous `manager` role.
 hassio_api: true
-hassio_role: manager
+hassio_role: homeassistant
 
 image: "ghcr.io/hle-world/ha-addon"

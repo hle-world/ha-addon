@@ -42,8 +42,13 @@ When adding endpoints for Home Assistant itself, point them at
 > http:
 >   use_x_forwarded_for: true
 >   trusted_proxies:
->     - 172.30.32.0/23
+>     - <the HLE add-on's IP>/32
 > ```
+>
+> Use the add-on's own address with a `/32` prefix, not the whole hassio subnet.
+> Trusting the whole subnet would let any other add-on on the same Supervisor
+> spoof `X-Forwarded-For`. The panel applies the correct value automatically and
+> refreshes it when the add-on restarts (the container IP can change).
 >
 > This is required by every reverse proxy (Nginx, Traefik, Cloudflare Tunnel, etc.) — not specific to HLE.
 
@@ -74,6 +79,11 @@ Click **Access Rules** on any running tunnel to manage the allow-list.
 The HLE panel is only reachable through Home Assistant ingress, so only users
 signed in to Home Assistant can open it. The add-on refuses connections from
 any other address, including other add-ons on the same host.
+
+The add-on registers for the Supervisor's `homeassistant` role, the least that
+can restart Home Assistant Core. It cannot manage other add-ons. Its only
+filesystem maps are `/data` (the add-on's own files) and Home Assistant's
+configuration folder, which it reads and appends the reverse-proxy snippet to.
 
 ## Logs
 

@@ -11,6 +11,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -44,6 +45,12 @@ async def lifespan(app: FastAPI):
                 os.environ["HLE_API_KEY"] = api_key
         except Exception:
             pass
+    try:
+        # Best effort: a read-only or unreadable config folder must never keep
+        # the add-on (and its tunnels) from starting.
+        _refresh_trusted_proxy()
+    except Exception:  # nosec B110
+        pass
     await tm.restore_all()
     yield
     await tm.shutdown_all()
@@ -52,7 +59,21 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 HLE_CONFIG = Path("/data/hle_config.json")  # our own file, not managed by HA Supervisor
-HA_CONFIG = Path("/config/configuration.yaml")
+
+
+def _ha_config_path() -> Path:
+    """Path to Home Assistant's configuration.yaml.
+
+    The `homeassistant_config` map mounts the HA config folder at /homeassistant
+    (the deprecated `config` map used /config), so accept whichever is present.
+    """
+    for parent in (Path("/homeassistant"), Path("/config")):
+        if (parent / "configuration.yaml").exists():
+            return parent / "configuration.yaml"
+    return Path("/homeassistant/configuration.yaml")
+
+
+HA_CONFIG = _ha_config_path()
 RESTART_NEEDED = Path(
     "/tmp/restart_needed"  # nosec B108 — intentional use of /tmp in addon container
 )  # sentinel: created on config apply, auto-cleared when config is confirmed
@@ -195,21 +216,107 @@ async def download_tunnel_logs(tunnel_id: str, lines: int = 2000):
 
 FAVICON_DIR = Path("/data/favicons")
 
+# Favicon bytes are rendered on the management origin, so they must be inert:
+# raster formats only (never SVG, which can carry script), confirmed by magic
+# bytes, and never larger than this.
+MAX_FAVICON_BYTES = 256 * 1024
+
+_FAVICON_MAGIC: tuple[tuple[bytes, str], ...] = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\x00\x00\x01\x00", "image/x-icon"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def _sniff_image(data: bytes) -> str | None:
+    """Return the media type for a supported raster image, or ``None``.
+
+    The upstream ``Content-Type`` is deliberately ignored — the upstream is
+    attacker controlled — and the format is decided purely by magic bytes.
+    This is what keeps SVG (and any other script-bearing content) from ever
+    being served from the management origin.
+    """
+    for magic, media_type in _FAVICON_MAGIC:
+        if data.startswith(magic):
+            return media_type
+    return None
+
+
+def _url_origin(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def _favicon_response(data: bytes, media_type: str) -> Response:
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+async def _read_capped(resp, limit: int) -> bytes | None:
+    """Read at most ``limit`` bytes of a streamed body; ``None`` if it is larger.
+
+    The upstream is attacker controlled, so the cap is enforced while reading
+    rather than after the whole body has been buffered.
+    """
+    declared = resp.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > limit:
+        return None
+    body = bytearray()
+    async for chunk in resp.aiter_bytes():
+        body.extend(chunk)
+        if len(body) > limit:
+            return None
+    return bytes(body)
+
+
+async def _fetch_same_origin(
+    client, url: str, origin: str, limit: int, max_redirects: int = 5
+) -> tuple[httpx.URL, bytes] | None:
+    """GET ``url`` and return ``(final_url, body)`` for a 200 response.
+
+    Only redirects that stay on ``origin`` are followed: following the
+    upstream's redirect to another host would be SSRF. A cross-origin
+    ``Location``, too many hops, a non-200 status or a body over ``limit``
+    bytes all return ``None``, which the caller treats as "no favicon".
+    """
+    for _ in range(max_redirects + 1):
+        async with client.stream("GET", url, follow_redirects=False) as resp:
+            if resp.is_redirect and resp.headers.get("location"):
+                url = str(resp.url.join(resp.headers["location"]))
+                if _url_origin(url) != origin:
+                    return None
+                continue
+            if resp.status_code != 200:
+                return None
+            body = await _read_capped(resp, limit)
+            return None if body is None else (resp.url, body)
+    return None
+
 
 @app.get("/api/tunnels/{tunnel_id}/favicon")
 async def get_tunnel_favicon(tunnel_id: str):
-    """Return the favicon from the tunnel's local service, cached on disk."""
+    """Return the favicon from the tunnel's local service, cached on disk.
+
+    Only PNG/ICO/JPEG/GIF are served, confirmed by magic bytes — never SVG —
+    because these bytes render on the management origin. Responses are capped
+    in size and sent with ``nosniff`` and a sandboxing CSP, and only
+    same-origin URLs are ever fetched.
+    """
     # Serve from cache if available
     cached = FAVICON_DIR / tunnel_id
     if cached.exists():
         data = cached.read_bytes()
-        ct = "image/x-icon"
-        # Detect PNG/SVG by magic bytes
-        if data[:8] == b"\x89PNG\r\n\x1a\n":
-            ct = "image/png"
-        elif data[:5] in (b"<?xml", b"<svg "):
-            ct = "image/svg+xml"
-        return Response(content=data, media_type=ct)
+        media_type = _sniff_image(data)
+        if media_type is not None and 0 < len(data) <= MAX_FAVICON_BYTES:
+            return _favicon_response(data, media_type)
 
     # Look up tunnel config to get service_url
     status = tm.get_tunnel(tunnel_id)
@@ -217,6 +324,7 @@ async def get_tunnel_favicon(tunnel_id: str):
         raise HTTPException(status_code=404, detail="Tunnel not found")
 
     service_url = status.service_url.rstrip("/")
+    origin = _url_origin(service_url)
 
     # Common favicon paths — services like Jellyfin use /web/favicon.ico
     favicon_paths = [
@@ -226,60 +334,58 @@ async def get_tunnel_favicon(tunnel_id: str):
         "/favicon.svg",
     ]
 
-    async with httpx.AsyncClient(timeout=5, verify=False) as client:  # nosec B501 — local LAN services often use self-signed certs
-        icon_data: bytes | None = None
-        icon_ct = "image/x-icon"
+    icon_data: bytes | None = None
+    icon_media = "image/x-icon"
 
+    async with httpx.AsyncClient(timeout=5, verify=False) as client:  # nosec B501 — local LAN services often use self-signed certs
         for path in favicon_paths:
             try:
-                resp = await client.get(f"{service_url}{path}", follow_redirects=True)
-                if resp.status_code == 200 and len(resp.content) > 0:
-                    ct_header = resp.headers.get("content-type", "")
-                    if (
-                        "image" in ct_header
-                        or "octet-stream" in ct_header
-                        or resp.content[:4] in (b"\x00\x00\x01\x00", b"\x89PNG")
-                    ):
-                        icon_data = resp.content
-                        if "png" in ct_header:
-                            icon_ct = "image/png"
-                        elif "svg" in ct_header:
-                            icon_ct = "image/svg+xml"
-                        break
+                fetched = await _fetch_same_origin(
+                    client, f"{service_url}{path}", origin, MAX_FAVICON_BYTES
+                )
             except Exception:
-                pass
+                continue
+            if fetched is None:
+                continue
+            data = fetched[1]
+            media_type = _sniff_image(data)
+            if media_type is not None and len(data) > 0:
+                icon_data = data
+                icon_media = media_type
+                break
 
         # Fallback: parse <link rel="icon"> from HTML
         if icon_data is None:
             try:
-                resp = await client.get(service_url, follow_redirects=True)
-                if resp.status_code == 200:
-                    html = resp.text[:8192]  # only scan the head
+                # Pages are often larger than the head we scan, so this fetch
+                # gets a generous cap and only the first 8 KiB is searched.
+                page = await _fetch_same_origin(
+                    client, service_url, origin, 2 * 1024 * 1024
+                )
+                if page is not None:
+                    page_url, page_body = page
+                    html = page_body[:8192].decode(
+                        "utf-8", "replace"
+                    )  # only scan the head
                     match = re.search(
                         r'<link[^>]+rel=["\'](?:shortcut )?icon["\'][^>]+href=["\']([^"\']+)',
                         html,
                         re.IGNORECASE,
                     )
                     if match:
-                        href = match.group(1)
-                        # Resolve relative to final URL (after redirects)
-                        base_url = str(resp.url).rstrip("/")
-                        if href.startswith("//"):
-                            href = "http:" + href
-                        elif href.startswith("/"):
-                            # Absolute path — use service origin
-                            href = service_url + href
-                        elif not href.startswith("http"):
-                            # Relative path — resolve against final URL
-                            href = base_url + "/" + href
-                        icon_resp = await client.get(href, follow_redirects=True)
-                        if icon_resp.status_code == 200 and len(icon_resp.content) > 0:
-                            icon_data = icon_resp.content
-                            ct_header = icon_resp.headers.get("content-type", "")
-                            if "png" in ct_header:
-                                icon_ct = "image/png"
-                            elif "svg" in ct_header:
-                                icon_ct = "image/svg+xml"
+                        # Resolve relative to the (same-origin) final URL and
+                        # refuse anything that escapes the service's origin.
+                        href = str(page_url.join(match.group(1)))
+                        if _url_origin(href) == origin:
+                            icon = await _fetch_same_origin(
+                                client, href, origin, MAX_FAVICON_BYTES
+                            )
+                            if icon is not None:
+                                data = icon[1]
+                                media_type = _sniff_image(data)
+                                if media_type is not None and len(data) > 0:
+                                    icon_data = data
+                                    icon_media = media_type
             except Exception:
                 pass
 
@@ -290,7 +396,7 @@ async def get_tunnel_favicon(tunnel_id: str):
     FAVICON_DIR.mkdir(parents=True, exist_ok=True)
     cached.write_bytes(icon_data)
 
-    return Response(content=icon_data, media_type=icon_ct)
+    return _favicon_response(icon_data, icon_media)
 
 
 # ---------------------------------------------------------------------------
@@ -444,16 +550,122 @@ async def delete_share_link(subdomain: ManagedSubdomain, link_id: int):
 # ---------------------------------------------------------------------------
 
 
-def _detect_subnet() -> str:
-    """Return the /23 subnet this addon uses to reach HA (e.g. '172.30.32.0/23')."""
+# Older versions trusted the whole hassio /23, which let any other add-on on
+# that network spoof X-Forwarded-For. Only the add-on's own address may be
+# trusted. Entries this add-on writes carry a marker so they can be refreshed
+# when the container's IP changes.
+_LEGACY_TRUSTED_PROXY = "172.30.32.0/23"
+_HLE_PROXY_MARKER = "# Added by HLE addon"
+# Older versions that created the whole `http:` block wrote this comment above
+# it and left the single trusted_proxies entry unmarked.
+_LEGACY_BLOCK_HEADER = "# Added by HLE addon —"
+
+
+def _detect_trusted_proxy() -> str | None:
+    """Return this add-on's own address as a single-host network.
+
+    For IPv4 that is e.g. '172.30.32.5/32'.  Trusting only this address stops
+    other add-ons on the hassio network from spoofing proxy headers.  Returns
+    None when the address cannot be determined.
+    """
     try:
         with socket.create_connection(
             ("homeassistant.local.hass.io", 8123), timeout=2
         ) as s:
-            addon_ip = s.getsockname()[0]
-        return str(ipaddress.ip_network(f"{addon_ip}/23", strict=False))
+            addon_ip = ipaddress.ip_address(s.getsockname()[0])
+        return f"{addon_ip}/{addon_ip.max_prefixlen}"
     except Exception:
-        return "172.30.32.0/23"
+        return None
+
+
+def _trusted_proxy_bounds(lines: list[str]) -> tuple[int, int] | None:
+    """Return the line range holding the trusted_proxies list entries."""
+    for i, line in enumerate(lines):
+        if re.match(r"[ \t]*trusted_proxies\s*:", line):
+            end = len(lines)
+            for j in range(i + 1, len(lines)):
+                stripped = lines[j].strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if stripped.startswith("-"):
+                    continue
+                end = j
+                break
+            return i + 1, end
+    return None
+
+
+def _rewrite_trusted_proxies(text: str, current: str) -> str:
+    """Replace add-on-managed trusted_proxies entries with ``current``.
+
+    An entry counts as add-on-written only if it carries the
+    "Added by HLE addon" marker, or is the first, unmarked entry of the block
+    older versions created whole (recognised by its "Added by HLE addon —"
+    header comment).  Any other entry, including a hand-written
+    ``172.30.32.0/23`` that other proxy add-ons rely on, is never touched.
+    """
+    lines = text.splitlines(keepends=True)
+    bounds = _trusted_proxy_bounds(lines)
+    if bounds is None:
+        return text
+    start, end = bounds
+    kept: list[str] = []
+    replaced = False
+    found_managed = False
+    first_entry = True
+    legacy_block = _LEGACY_BLOCK_HEADER in text
+    for line in lines[start:end]:
+        match = re.match(r"([ \t]*)-\s+(\S+)(.*)$", line)
+        managed = match is not None and (
+            _HLE_PROXY_MARKER in match.group(3)
+            or (first_entry and legacy_block and match.group(2).endswith("/23"))
+        )
+        if match is not None:
+            first_entry = False
+        if not managed:
+            kept.append(line)
+            continue
+        found_managed = True
+        if match.group(2) == current:
+            kept.append(line)
+            replaced = True
+        elif not replaced:
+            kept.append(f"{match.group(1)}- {current}  {_HLE_PROXY_MARKER}\n")
+            replaced = True
+    if not found_managed:
+        return text
+    return "".join(lines[:start] + kept + lines[end:])
+
+
+def _refresh_trusted_proxy() -> None:
+    """Refresh the managed trusted_proxies entry on add-on start.
+
+    The add-on's container IP can change between restarts, so an old address
+    must not stay trusted.  HA still needs a restart to pick up the change, so
+    the restart sentinel is set when the file is modified.
+    """
+    if not HA_CONFIG.exists():
+        return
+    current = _detect_trusted_proxy()
+    if not current:
+        return
+    text = HA_CONFIG.read_text(errors="replace")
+    if "use_x_forwarded_for" not in text:
+        return
+    updated = _rewrite_trusted_proxies(text, current)
+    if re.search(
+        rf"^[ \t]*-\s+{re.escape(_LEGACY_TRUSTED_PROXY)}\s*$", updated, re.MULTILINE
+    ):
+        print(
+            f"[hle] WARNING: configuration.yaml trusts {_LEGACY_TRUSTED_PROXY} "
+            "as a reverse proxy; consider narrowing it, since every add-on on "
+            "that network can then spoof X-Forwarded-For.",
+            flush=True,
+        )
+    if updated == text:
+        return
+    HA_CONFIG.write_text(updated)
+    RESTART_NEEDED.write_text("1")
 
 
 def _sentinel_stale() -> bool:
@@ -483,8 +695,8 @@ async def ha_setup_status():
     if not HA_CONFIG.exists():
         return {"status": "no_file", "restart_pending": restart_needed}
     text = HA_CONFIG.read_text(errors="replace")
-    subnet = _detect_subnet()
-    if "use_x_forwarded_for" in text:
+    subnet = _detect_trusted_proxy()
+    if subnet and "use_x_forwarded_for" in text:
         if subnet in text:
             # Config looks correct.  If the sentinel is old enough, assume
             # the restart has already happened and auto-clear.
@@ -515,48 +727,57 @@ async def ha_setup_apply():
     """Append the http proxy block (or just the missing subnet) to configuration.yaml."""
     if not HA_CONFIG.exists():
         raise HTTPException(
-            status_code=404, detail="configuration.yaml not found at /config/"
+            status_code=404,
+            detail=f"configuration.yaml not found at {HA_CONFIG.parent}/",
         )
     text = HA_CONFIG.read_text(errors="replace")
-    subnet = _detect_subnet()
+    subnet = _detect_trusted_proxy()
+    if not subnet:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not determine the add-on's IP address. Please add it manually.",
+        )
 
     if "use_x_forwarded_for" in text:
         if subnet in text:
             return {"status": "already_configured", "subnet": subnet}
-        # http block exists with use_x_forwarded_for but our subnet is missing —
-        # insert the subnet after the last entry under trusted_proxies.
-        lines = text.splitlines(keepends=True)
-        tp_idx = next(
-            (
-                i
-                for i, line in enumerate(lines)
-                if re.match(r"[ \t]*trusted_proxies\s*:", line)
-            ),
-            None,
-        )
-        if tp_idx is None:
-            raise HTTPException(
-                status_code=409,
-                detail="Could not locate trusted_proxies key in configuration.yaml. Please add the subnet manually.",
+        # Replace any stale entry this add-on wrote (including the historical
+        # /23), then insert our address if it is still missing.
+        text = _rewrite_trusted_proxies(text, subnet)
+        if subnet not in text:
+            lines = text.splitlines(keepends=True)
+            tp_idx = next(
+                (
+                    i
+                    for i, line in enumerate(lines)
+                    if re.match(r"[ \t]*trusted_proxies\s*:", line)
+                ),
+                None,
             )
-        # Detect indentation from the first existing list entry under trusted_proxies.
-        entry_indent = "    "
-        for i in range(tp_idx + 1, min(tp_idx + 10, len(lines))):
-            m = re.match(r"([ \t]*)-\s+", lines[i])
-            if m:
-                entry_indent = m.group(1)
-                break
-        # Find the last list entry that belongs to this trusted_proxies block.
-        last_entry_idx = tp_idx
-        for i in range(tp_idx + 1, len(lines)):
-            stripped = lines[i].strip()
-            if re.match(r"-\s+", stripped):
-                last_entry_idx = i
-            elif stripped and not stripped.startswith("#"):
-                break  # reached the next YAML key — stop
-        new_line = f"{entry_indent}- {subnet}  # Added by HLE addon\n"
-        lines.insert(last_entry_idx + 1, new_line)
-        HA_CONFIG.write_text("".join(lines))
+            if tp_idx is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Could not locate trusted_proxies key in configuration.yaml. Please add the address manually.",
+                )
+            # Detect indentation from the first existing list entry under trusted_proxies.
+            entry_indent = "    "
+            for i in range(tp_idx + 1, min(tp_idx + 10, len(lines))):
+                m = re.match(r"([ \t]*)-\s+", lines[i])
+                if m:
+                    entry_indent = m.group(1)
+                    break
+            # Find the last list entry that belongs to this trusted_proxies block.
+            last_entry_idx = tp_idx
+            for i in range(tp_idx + 1, len(lines)):
+                stripped = lines[i].strip()
+                if re.match(r"-\s+", stripped):
+                    last_entry_idx = i
+                elif stripped and not stripped.startswith("#"):
+                    break  # reached the next YAML key — stop
+            new_line = f"{entry_indent}- {subnet}  {_HLE_PROXY_MARKER}\n"
+            lines.insert(last_entry_idx + 1, new_line)
+            text = "".join(lines)
+        HA_CONFIG.write_text(text)
         RESTART_NEEDED.write_text("1")
         return {"status": "applied", "subnet": subnet}
 
@@ -575,7 +796,7 @@ async def ha_setup_apply():
         "http:\n"
         "  use_x_forwarded_for: true\n"
         "  trusted_proxies:\n"
-        f"    - {subnet}\n"
+        f"    - {subnet}  {_HLE_PROXY_MARKER}\n"
     )
     HA_CONFIG.write_text(text + block)
     RESTART_NEEDED.write_text("1")
@@ -629,21 +850,10 @@ async def ha_ping():
 
 @app.get("/api/network-info")
 async def get_network_info():
-    """Return the addon container's IP and the trusted_proxies subnet for HA config."""
-    addon_ip: str | None = None
-    subnet: str | None = None
-    try:
-        # Connect toward HA so the OS picks the right source interface.
-        with socket.create_connection(
-            ("homeassistant.local.hass.io", 8123), timeout=2
-        ) as s:
-            addon_ip = s.getsockname()[0]
-        # HA Supervisor always allocates addon IPs inside a /23 block.
-        net = ipaddress.ip_network(f"{addon_ip}/23", strict=False)
-        subnet = str(net)
-    except Exception:
-        pass
-    return {"addon_ip": addon_ip, "trusted_subnet": subnet}
+    """Return the add-on's IP and the trusted_proxies entry for HA config."""
+    trusted = _detect_trusted_proxy()
+    addon_ip = trusted.rsplit("/", 1)[0] if trusted else None
+    return {"addon_ip": addon_ip, "trusted_subnet": trusted}
 
 
 @app.get("/api/config")

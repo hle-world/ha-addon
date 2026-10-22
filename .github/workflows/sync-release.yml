@@ -82,7 +82,7 @@ jobs:
           ## hle-client v${VERSION} released
 
           Auto-merge enabled — this PR will merge when required CI checks pass.
-          The post-release smoke test in \`the private orchestrator repo\` is the safety net
+          The post-release smoke test is the safety net
           for cross-repo protocol skew.
 
           **After merging:** create a **pre-release** to trigger the Docker build:

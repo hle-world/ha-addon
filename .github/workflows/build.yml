@@ -17,6 +17,9 @@ jobs:
   build-arm:
     name: Build ${{ matrix.arch }}
     runs-on: arc-runner-ha-addon
+    # Self-hosted runner: never run for forks. Triggers are release/dispatch only
+    # (no pull_request), and this guard keeps it that way.
+    if: github.repository == 'hle-world/ha-addon'
     container:
       image: debian:bookworm-slim
     permissions:

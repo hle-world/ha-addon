@@ -11,6 +11,9 @@ on:
   workflow_run:
     workflows: ["Test"]
     types: [completed]
+    # Only an optimisation to avoid starting runs that would be skipped; the
+    # `if:` on the job below is the actual guard.
+    branches: ['chore/sync-webapp-*']
 
 permissions:
   contents: read

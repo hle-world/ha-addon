@@ -61,19 +61,8 @@ app = FastAPI(title="HLE Add-on API", docs_url=None, redoc_url=None, lifespan=li
 HLE_CONFIG = Path("/data/hle_config.json")  # our own file, not managed by HA Supervisor
 
 
-def _ha_config_path() -> Path:
-    """Path to Home Assistant's configuration.yaml.
-
-    The `homeassistant_config` map mounts the HA config folder at /homeassistant
-    (the deprecated `config` map used /config), so accept whichever is present.
-    """
-    for parent in (Path("/homeassistant"), Path("/config")):
-        if (parent / "configuration.yaml").exists():
-            return parent / "configuration.yaml"
-    return Path("/homeassistant/configuration.yaml")
-
-
-HA_CONFIG = _ha_config_path()
+# The `homeassistant_config` map mounts the HA config folder at /homeassistant.
+HA_CONFIG = Path("/homeassistant/configuration.yaml")
 RESTART_NEEDED = Path(
     "/tmp/restart_needed"  # nosec B108 — intentional use of /tmp in addon container
 )  # sentinel: created on config apply, auto-cleared when config is confirmed
